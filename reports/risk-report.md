@@ -2,12 +2,21 @@
 
 ## Background
 
-* Livepeer Protocol allows LPT holders to *delegate* their tokens, and associated voting power, to a node operator, a.k.a. Orchestrator. Every round or 6337 Ethereum blocks, new LPT tokens are issued and distributed as **rewards** to Orchestrators, who pass them on to their Delegators after taking a cut.
-* The *emissions schedule* — that is, the amount of new LPT issued each round — is controlled by a mechanism that adjusts the rate according to the *bonding rate*, that is, the proportion of LPT supply locked in stake positions. Specifically, each round the emissions rate is adjusted up, resp. down, by a fixed additive offset, according to whether the bonding rate is below, resp. above, a constant setpoint. The rationale for this mechanism is that higher, resp. lower emissions entail a greater, resp. lesser incentive to stake LPT; the mechanism should therefore encourage stake participation to tend towards the setpoint.
-* The additive offset and the setpoint are parameters of the mechanism. In the contract source, they are called `inflationChange` and `targetBondingRate`, respectively. They are quantified in units of parts per billion (ppb) and ppb per round.
-* The current settings for these parameters are `500` (0.00005% adjustment per round) and `500_000_000` (50%).
+### Design of the emissions mechanism
+
+* Livepeer Protocol allows LPT holders to *delegate* their tokens, and associated voting power, to a node operator, a.k.a. Orchestrator. Every round of 6337 Ethereum blocks, new LPT tokens are issued and distributed as **rewards** to Orchestrators, who pass them on to their Delegators after taking a cut.
+
+* The **emissions schedule** — that is, the amount of new LPT issued each round — is controlled by a mechanism that adjusts the rate according to the **bonding rate**, that is, the proportion of LPT supply locked in stake positions. (The bonding rate is also called the *participation rate*.) Specifically, each round the emissions rate is adjusted up, resp. down, by a fixed additive offset, according to whether the bonding rate is below, resp. above, a constant setpoint. 
+
+  The rationale for this mechanism is that higher, resp. lower emissions entail a greater, resp. lesser incentive to stake LPT. In theory, then, the mechanism ought to encourage stake participation to tend towards the setpoint.
+
+* The additive offset and the setpoint are parameters of the mechanism. In the contract source, they are called `inflationChange` and `targetBondingRate`, respectively. They are quantified in units of parts per billion (ppb). More precisely, `targetBondingRate` is expressed in ppb and `inflationChange` is expressed in ppb per round.
+
+* The current settings for these parameters are `500` (0.00005% adjustment per round) and `500_000_000` (50% bonding rate target).
+
 * This mechanism is implemented in the **Minter** contract.
-  * Deployment: https://arbiscan.io/address/0xc20DE37170B45774e6CD3d2304017fc962f27252
+
+  * Deployment: https://arbiscan.io/address/0xc20DE37170B45774e6CD3d2304017fc962f27252 
   * Source: https://github.com/livepeer/protocol/blob/delta/contracts/token/Minter.sol
 
 ### History of changes or proposed changes to emissions mechanism
@@ -19,7 +28,7 @@
 
 ## Defining risks
 
-The Livepeer emissions system does not have a commonly accepted standard of *failure* or *insolvency* against which to judge risk. Therefore, in addition to studying the possible causes of undesired outcomes, part of our task is to arrive at a definition of what those undesired outcomes are.
+The Livepeer emissions system does not have a commonly accepted standard of "failure" or "insolvency" against which to judge risk. Therefore, in addition to studying the possible causes of undesired outcomes, part of our task is to arrive at a definition of which outcomes are undesired.
 
 Key terms are defined in [`/risk/glossary.md`](../risk/glossary.md).
 
@@ -41,11 +50,13 @@ We chose H1 2026 as a horizon for objectives because the error of our forecasts 
 
 The purpose of this report is not to define *why* low bonding rate is an undesired outcome. Nonetheless, a few comments on the topic are possible:
 
-* Security via slashing (or signal of future security)
-* Resistance to hostile governance actions. Curren
+* Resistance to hostile governance actions. Currently, transfers from the treasury are controlled by DAO votes and enforced onchain. A successful hostile governance action could therefore drain the treasury. For context, at time of writing the treasury holds 485,127 LPT, valued at a little over $2M USD.
+
+* Part of the design of the Livepeer protocol calls for staked tokens to be treated as collateral that may be subject to penalty charges (a.k.a. slashing) in the event of improper node behaviour. Under such a design, the TVL of the protocol is often consdered a measure of the "economic security" of the system.
+
+  The slashing component of Livepeer's design is not currently implemented, so stake does not currently contribute any security in this sense. However, the participation rate may be interpreted as a signal of commitment to security in a future where slashing is eventually implemented.
+
 * Low bonding rate may signal a lack of investor interest in LPT-denominated yield, or in Livepeer as a whole. In this case, low bonding rate is merely a symptom of an underlying problem and not a problem in and of itself. Attempting to correct a low bonding rate in this scenario may simply mask the underlying risk factor.
-
-
 
 ### Non-objectives
 
@@ -225,12 +236,12 @@ To pre-empt the threat of persistently excessive emissions
 
 ### Fan plots
 
-To illustrate the effects of various parameter tunings, we show p95 dilution and fan plots of forecast emission and bonding rates over H1 2026.
+To illustrate the effects of various tunings of the `targetBondingRate` parameter, we show p95 dilution and fan plots of forecast emission and bonding rates over H1 2026.
 
 * Visually, there is very little difference between the evolutions of participation rate under the different tunings. That reflects the fact that our models cannot detect a large effect of emissions rate on participation.
-* If we leave `targetBondingRate` and look at the fans for  different settings of `inflationChange`, we notice the fans look the same but the y-axis scale changes.
-* There is a critical value of `targetBondingRate` above which increasing `inflationChange` makes p95 emissions higher instead of lower.
-* With `targetBondingRate` set at 45%, the uncertainty about dilution over H1 2026 is pretty low.
+* Adjusting the `inflationChange` parameter yields fans that look visually identical, but for which the y-axis on the emissions rate chart is scaled. For that reason, we haven't included images of the fan plots under tunings with higher `inflationChange`.
+* There is a critical value of `targetBondingRate` above which increasing `inflationChange` makes p95 emissions higher instead of lower. We didn't try to compute this figure accurately, but it appears to be between 47 and 48%.
+* With `targetBondingRate` set at 45%, the uncertainty about dilution over H1 2026 is low, as can be seen from the fan plots.
 
 ```
 targetBondingRate	|	inflationChange	|	dilution_p95 (%)
