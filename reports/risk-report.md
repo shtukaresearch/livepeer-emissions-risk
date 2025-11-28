@@ -127,13 +127,27 @@ Given objectives for bonding rate and dilution, a parameter tuning is **risk-adm
   * CoinMarketCap 
   * Annualised weekly volatility of ETH daily returns.
 
+### Simulation methodology
+
+For each tuning, we check risk admissibility by using Monte Carlo sampling (200 runs) to estimate the probability of achieving the emissions objective (OE) and the bonding rate objective (OB). A tuning is considered risk admissible if, for each of the two objectives, the estimated success probability is at least $0.95$.
+
+We iterate through objective choices and parameter tunings using the following algorithm:
+
+1. We fix a list of values to try as dilution objectives for H1 2026. Expressed as percentages, the list we used is `[12, 11.5, 11, 10.5]`.
+2. For each candidate dilution objectives, we iterate through parameter tunings, testing each for risk admissibility, as follows:
+   1. First set `targetBondingRate` to a low value such as 30%. A value is considered "low" if, under all tunings we considered, bonding rate is very unlikely to fall below this figure at all during the forecast interval.
+   2. Now start at `inflationChange = 500` and adjust in increments of `100` until a risk admissible tuning is found. This tuning for `inflationChange` is called the *naive optimum*. It is the smallest value of `inflationChange` that can possibly achieve the objective.
+   3. Next, increase `targetBondingRate` in increments of 1% until a tuning is found that is *not* risk admissible. The previous iteration — the most recently tested tuning that was found to be admissible — is Pareto efficient.
+   4. Again, increase `inflationChange` in increments of `100` until an admissible tuning is found.
+   5. Repeat steps (3) and (4) until `inflationChange` reaches 1500, then stop.
+
 ### Simulation results
 
-Our simultions showed the following sets.
+The bonding rate objective was achieved with high confidence under all parameter tunings we considered. That is, every parameter tuning is risk admissible with respect to (OB).
+
+The sets of admissible tunings for various choices of value for the (OE) objective are displayed in the following Pareto frontier plot:
 
 ![](/home/mac/repo/livepeer-emissions-risk/reports/svg/tunings.svg)
-
-*Pareto optimal tunings.* For our chosen objective of 12%, we find the following parameter choices are Pareto optimal in the sense that neither parameter can be moved closer to its current tuning without moving the other further away (or failing the objectives).
 
 ## Processes for ongoing maintenance
 
@@ -267,7 +281,7 @@ targetBondingRate	|	inflationChange	|	dilution_p95 (%)
 
 ### Admissible tunings
 
-The following table lists Pareto optimal tunings that achieve given dilution objectives with high confidence.
+The following table lists Pareto optimal tunings that achieve given dilution objectives with high confidence. These data points are used to plot the Pareto front shown in [Simulation results](#simulation-results).
 
 | Dilution objective | `targetBondingRate` (%) | `inflationChange` |
 | ------------------ | ----------------------- | ----------------- |
