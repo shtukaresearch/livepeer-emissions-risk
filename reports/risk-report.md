@@ -34,6 +34,10 @@ The Livepeer emissions system does not have a commonly accepted standard of "fai
 
 Key terms are defined in [`/risk/glossary.md`](../risk/glossary.md).
 
+### Horizon
+
+We chose H1 2026 as a horizon for objectives because the error of our forecasts grows too much to be useful beyond that window. The six month window is also the chosen interval for the regular Advisory Board governance process, making it a convenient time to revisit the emissions risk assessments.
+
 ### Objectives
 
 We express the undesired outcomes for bonding rate in terms of the average over each calendar month in H1 2026: six numerical measurements.
@@ -43,10 +47,6 @@ We express the undesired outcomes for bonding rate in terms of the average over 
 * H1 2026 dilution is within the **dilution bound**.
 
 Grosso modo, the reasoning behind the undesirability of these outcomes revolves around balancing fears of *capital flight* (high dilution) and *low security* (low bonding rate). We do not currently have a framework to quantify the effect of bonding rate on "security" or of dilution on investor confidence; instead, we simply employ these metrics directly to form objectives.
-
-### Horizon
-
-We chose H1 2026 as a horizon for objectives because the error of our forecasts grows too much to be useful beyond that window. The six month window is also the chosen interval for the regular Advisory Board governance process, making it a convenient time to revisit the emissions risk assessments.
 
 ### Low bonding rate
 
@@ -85,7 +85,7 @@ A low bonding rate can be *short-lived* (defined here to be less than one month)
 
 *Example.* The bonding rate dips temporarily below the 90 day moving average around the time of Trump's US election victory (which was somewhat anticipated in markets) and does not rise above it again until mid-January (coincidentally, exactly on the launch date of the TRUMP cryptocurrency).
 
-![us-election-run](/home/mac/repo/livepeer-emissions-risk/reports/svg/us-election-run.svg)
+![us-election-run](./svg/us-election-run.svg)
 
 Simple OLS regression against market indicators suggests a negative relationship between bonding rate and market activity, as illustrated by this snippet.
 
@@ -147,7 +147,7 @@ The bonding rate objective was achieved with high confidence under all parameter
 
 The sets of admissible tunings for various choices of value for the (OE) objective are displayed in the following Pareto frontier plot:
 
-![](/home/mac/repo/livepeer-emissions-risk/reports/svg/tunings.svg)
+![](./svg/tunings.svg)
 
 ## Processes for ongoing maintenance
 
