@@ -2,13 +2,20 @@
 
 ## Background
 
-* Livepeer Protocol allows LPT holders to *delegate* their tokens, and associated voting power, to an Orchestrator. Every round or 6337 Ethereum blocks, new LPT tokens are issued and distributed as **rewards** to Orchestrators, who then share them with their Delegators.
+* Livepeer Protocol allows LPT holders to *delegate* their tokens, and associated voting power, to a node operator, a.k.a. Orchestrator. Every round or 6337 Ethereum blocks, new LPT tokens are issued and distributed as **rewards** to Orchestrators, who pass them on to their Delegators after taking a cut.
+* The *emissions schedule* — that is, the amount of new LPT issued each round — is controlled by a mechanism that adjusts the rate according to the *bonding rate*, that is, the proportion of LPT supply locked in stake positions. Specifically, each round the emissions rate is adjusted up, resp. down, by a fixed additive offset, according to whether the bonding rate is below, resp. above, a constant setpoint. The rationale for this mechanism is that higher, resp. lower emissions entail a greater, resp. lesser incentive to stake LPT; the mechanism should therefore encourage stake participation to tend towards the setpoint.
+* The additive offset and the setpoint are parameters of the mechanism. In the contract source, they are called `inflationChange` and `targetBondingRate`, respectively. They are quantified in units of parts per billion (ppb) and ppb per round.
+* The current settings for these parameters are `500` (0.00005% adjustment per round) and `500_000_000` (50%).
+* This mechanism is implemented in the **Minter** contract.
+  * Deployment: https://arbiscan.io/address/0xc20DE37170B45774e6CD3d2304017fc962f27252
+  * Source: https://github.com/livepeer/protocol/blob/delta/contracts/token/Minter.sol
 
-* In July 2020, Viktor Bunin introduced a proposal to slow down the `inflationChange` parameter because at the time, emissions appeared to be on a crash course to zero. Since the network was not earning any revenue of note at the time, that would have killed all Orchestrator income. The proposed changes also necessitated changing the units of the `inflationChange` and `inflation` variables from ppm to ppb (per round).
+### History of changes or proposed changes to emissions mechanism
 
-  August 2020, these proposals were finalised as LIP-35 (bundling LIP-34 and LIP-40).
-
-* In February 2022, Livepeer Protocol migrated to Arbitrum One. Since that time, the bonding rate has mostly remained between 40 and 50%. Emissions bottomed out in December 2022 and have risen almost every single round since then. 
+* The original concept for the participation-based emissions mechanism was published in a [Medium article](https://petkanics.medium.com/inflation-and-participation-in-stake-based-token-protocols-1593688612bf ) by Doug Petkanics in 2017.
+* In July 2020, Viktor Bunin introduced a proposal to slow down the `inflationChange` parameter. At the time, emissions appeared to be on a crash course to zero. Since the network was not earning any revenue of note at the time, that would have killed essentially all Orchestrator income. The proposed changes also necessitated changing the units of the `inflationChange` and `inflation` variables from ppm to ppb (per round).
+* August 2020, these proposals were finalised as LIP-35 (bundling LIP-34 and LIP-40).
+* In February 2022, Livepeer Protocol migrated to Arbitrum One. Since that time, the bonding rate has mostly remained between 40 and 50%. Emissions bottomed out in December 2022 and have risen almost every single round since then.
 
 ## Defining risks
 
