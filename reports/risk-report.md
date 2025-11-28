@@ -230,9 +230,6 @@ If the trigger state is considered severe enough to warrant urgent intervention,
 
 The only conceivable intervention is to investigate possible structural causes for the condition and try to address them.
 
-* Improved communication, messaging campaigns
-* Improved UX
-
 **Excessive emissions.**
 
 Excessive emissions can be prevented *a priori* with a hard cap. However, the community may prefer to allow emissions to rise to a high level temporarily as a stimulus to mitigate an ephemeral low bonding rate, and instead manually control for quarterly, semiannual, or annual emissions targets.
