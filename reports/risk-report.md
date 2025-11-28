@@ -2,6 +2,17 @@
 
 [toc]
 
+## Executive summary
+
+* We define and introduce a scheme for quantifying objectives for the Livepeer Protocol emissions subsystem over an objective period of H1 2026.
+* The two classes of objective we consider are limits on *bonding rate* and *total emissions*. Total emissions are quantified in terms of the amount by which a holding of unstaked LPT would be diluted over the period; equivalently, the proportion of LPT supply at the end of the period that was issued during the period.
+* Yield is not treated as an objective.
+* Based on feedback from a community survey, 40% is considered a lower acceptance threshold for bonding rate.
+* We evaluate several potential choices of objective for H1 total emissions, based on figures that appear to be feasible without "drastic" parameter changes. The figures considered are 12%, 11.5%, 11%, and 10.5%.
+* Given candidate objectives for bonding rate and total emissions, we evaluate **tunings** of the setpoint and adjustment speed parameters in terms of how likely the Livepeer Network is to achieve those objectives under those tunings. We identify tunings that are "risk admissible" in the sense that, according to a statistical model, they have a high (95%) probability of achieving the objectives. 
+* An admissible tuning is called **efficient** if, roughly speaking, there is no other admissible tuning strictly closer to the current tuning. For each set of candidate objectives, there are multiple efficient tunings which trade off between lower setpoint and higher adjustment speed. We illustrate these tradeoffs by plotting the Pareto boundary.
+* This analysis is intended to form the quantitative basis for choosing parameters in a proposal to manage emissions while maintaining bonding rate at a satisfactory level.
+
 ## Background
 
 ### Design of the emissions mechanism
@@ -40,29 +51,27 @@ We chose H1 2026 as a horizon for objectives because the error of our forecasts 
 
 ### Objectives
 
-We express the undesired outcomes for bonding rate in terms of the average over each calendar month in H1 2026: six numerical measurements.
+One type of objective is inherited from the concept behind the design of the emissions: to keep the bonding rate within a range considered acceptable. Based on views from the community survey, we believe excessively *low* bonding rates are more likely to be a cause for concern than excessively *high* ones.
 
 * The calendar month bonding rate is not **low** for more than one calendar month in H1 2026.
 * The calendar month bonding rate is never **critically low** in H1 2026.
+
+This report will also introduce a new type of objective which is not explicitly a design feature of the emissions mechanism, but about which the Livepeer community has concerns: the **emissions target** objective (OE). In the context of this report, an emissions objective is the criterion that total LPT emissions over the objective horizon do not exceed a stated threshold.
+
 * H1 2026 dilution is within the **dilution bound**.
-
-Grosso modo, the reasoning behind the undesirability of these outcomes revolves around balancing fears of *capital flight* (high dilution) and *low security* (low bonding rate). We do not currently have a framework to quantify the effect of bonding rate on "security" or of dilution on investor confidence; instead, we simply employ these metrics directly to form objectives.
-
-### Low bonding rate
-
-The purpose of this report is not to define *why* low bonding rate is an undesired outcome. Nonetheless, a few comments on the topic are possible:
-
-* Resistance to hostile governance actions. Currently, transfers from the treasury are controlled by DAO votes and enforced onchain. A successful hostile governance action could therefore drain the treasury. For context, at time of writing the treasury holds 485,127 LPT, valued at a little over $2M USD.
-
-* Part of the design of the Livepeer protocol calls for staked tokens to be treated as collateral that may be subject to penalty charges (a.k.a. slashing) in the event of improper node behaviour. Under such a design, the TVL of the protocol is often consdered a measure of the "economic security" of the system.
-
-  The slashing component of Livepeer's design is not currently implemented, so stake does not currently contribute any security in this sense. However, the participation rate may be interpreted as a signal of commitment to security in a future where slashing is eventually implemented.
-
-* Low bonding rate may signal a lack of investor interest in LPT-denominated yield, or in Livepeer as a whole. In this case, low bonding rate is merely a symptom of an underlying problem and not a problem in and of itself. Attempting to correct a low bonding rate in this scenario may simply mask the underlying risk factor.
 
 ### Non-objectives
 
 For the purposes of this report, we don't regard a *high bonding rate* or *high yield* as a risk outcome. However, since high yield is associated with high dilution, an outcome that satisfies our objectives will naturally also have limited yield.
+
+### Quantifying objectives
+
+Based on views gathered from a [community survey](https://forum.livepeer.org/t/continuing-discussions-on-inflation/3139), we adopt the following acceptance sets for bonding rate:
+
+* A bonding rate of below 40% (`currentBondingRate < 400_000_000`) is considered **low**.
+* A bonding rate of below 30% (`currentBondingRate < 300_000_000`) is considered **critically low**.
+
+It is important to note that the choice of tuning for `targetBondingRate` need not equal either of these thresholds, although the choice of these thresholds will certainly inform the former.
 
 ### Risk scenarios and causes
 
@@ -95,20 +104,25 @@ Delegators incur switching costs when moving capital out of LPT stake and deploy
 
 **Combination risk scenarios.** Because of the design of the emissions mechanism, a *persistently low bonding rate* often results in excessive dilution. However, bonding rate can return to near the target and dilution remain high, so excessive dilution does not necessarily imply low bonding rate.
 
-### Quantifying objectives
-
-Based on results from the community survey, we adopt the following policy for maintaining bonding rate with
-
-* A bonding rate of below 40% (`currentBondingRate < 400_000_000`) is considered **low**.
-* A bonding rate of below 30% (`currentBondingRate < 300_000_000`) is considered **critically low**.
-
-It is important to note that the choice of tuning for `targetBondingRate` need not equal either of these thresholds, although the choice of these thresholds will certainly inform the former.
-
-Now suppose that we set our dilution objective to a value $X$. The smallest tuning of `inflationChange` that has a positive chance of achieving $X$ is the value that would achieve $X$ under a minimum emissions outcome. Let's call this the *naïve tuning*. Naïve tunings can be computed without any data, since the evolution of `currentBondingRate` is assumed known a priori.
-
 ### Admissible tunings
 
 Given objectives for bonding rate and dilution, a parameter tuning is **risk-admissible** if a model predicts that under those parameters, those objectives will be achieved with probability greater than a given threshold $p\in[0,1]$. Typically, a threshold quite close to $1$ is used. In the sequel, we will use $p=0.95$.
+
+### Motivating objective choices
+
+It is beyond the scope of this report to interrogate the rationale behind choosing bonding rate and emissions as objective criteria. Nonetheless, the reader may find some context on the topic useful for interpreting of the results.
+
+Grosso modo, the reasoning behind the undesirability of low bonding rate or high emissions revolves around balancing fears of *capital flight* (high dilution) and *low security* (low bonding rate). 
+
+* Resistance to hostile governance actions. Currently, transfers from the treasury are controlled by DAO votes and enforced onchain. A successful hostile governance action could therefore drain the treasury. For context, at time of writing the treasury holds 485,127 LPT, valued at a little over $2M USD.
+
+* Part of the design of the Livepeer protocol calls for staked tokens to be treated as collateral that may be subject to penalty charges (a.k.a. slashing) in the event of improper node behaviour. Under such a design, the TVL of the protocol is often consdered a measure of the "economic security" of the system.
+
+  The slashing component of Livepeer's design is not currently implemented, so stake does not currently contribute any security in this sense. However, the participation rate may be interpreted as a signal of commitment to security in a future where slashing is eventually implemented.
+
+* Low bonding rate may signal a lack of investor interest in LPT-denominated yield, or in Livepeer as a whole. In this case, low bonding rate is merely a symptom of an underlying problem and not a problem in and of itself. Attempting to correct a low bonding rate in this scenario may simply mask the underlying risk factor.
+
+We do not currently have a framework to quantify the effect of bonding rate on "security" or of dilution on investor confidence.
 
 ## Simulation model
 
@@ -159,7 +173,11 @@ All sources of uncertainty associated with these forecasts increase with time. I
 
 2. What are the main tradeoffs between various choices for those elements?
 
+   (Discussed in each of the corresponding sections.)
+
 3. What has to happen next in order to get a framework like that fleshed out and operational?
+
+   (The Transformation SPE should assemble a task force.)
 
 ### Monitoring
 
