@@ -4,13 +4,11 @@
 
 ## Executive summary
 
-* We define and introduce a scheme for quantifying objectives for the Livepeer Protocol emissions subsystem over an objective period of H1 2026.
-* The two classes of objective we consider are limits on *bonding rate* and *total emissions*. Total emissions are quantified in terms of the amount by which a holding of unstaked LPT would be diluted over the period; equivalently, the proportion of LPT supply at the end of the period that was issued during the period.
-* Yield is not treated as an objective.
-* Based on feedback from a community survey, 40% is considered a lower acceptance threshold for bonding rate.
-* We evaluate several potential choices of objective for H1 total emissions, based on figures that appear to be feasible without "drastic" parameter changes. The figures considered are 12%, 11.5%, 11%, and 10.5%.
-* Given candidate objectives for bonding rate and total emissions, we evaluate **tunings** of the setpoint and adjustment speed parameters in terms of how likely the Livepeer Network is to achieve those objectives under those tunings. We identify tunings that are "risk admissible" in the sense that, according to a statistical model, they have a high (95%) probability of achieving the objectives. 
-* An admissible tuning is called **efficient** if, roughly speaking, there is no other admissible tuning strictly closer to the current tuning. For each set of candidate objectives, there are multiple efficient tunings which trade off between lower setpoint and higher adjustment speed. We illustrate these tradeoffs by plotting the Pareto boundary.
+* We define and introduce a scheme for quantifying objectives for the Livepeer Protocol emissions subsystem over a forecast period of H1 2026. The two classes of objective we consider are limits on *bonding rate*, the proportion of LPT supply locked in stake, and *total dilution*, the proportion of unstaked market cap that is redistributed to stakers over the forecast period.
+* Using a statistical model, we simulate the evolution of the system state under various **tunings** of the protocol parameters of setpoint and adjustment speed and estimate how likely the system is to achieve various candidates of bonding rate and dilution objective. 
+* LPT reward rate is not treated as an objective, but prediction intervals for trailing returns can be computed from the simulations.
+* Based on feedback from a community survey, 40% is considered a lower acceptance threshold for bonding rate. For all parameter tunings under examination, the participation rate remains above 40% for the entire period with high probability.
+* We evaluate several potential choices of objective for H1 total emissions, based on figures that appear to be feasible without extreme parameter changes. The most aggressive parameter change for which we ran simulations corresponds to an H1 dilution figure of 10.5%. We also considered objectives of 12%, 11.5%, and 11%. For each candidate objective, there are a few choices of tunings that are "efficient" in the sense that we are not confident any smaller change of parameters would achieve the objective.
 * This analysis is intended to form the quantitative basis for choosing parameters in a proposal to manage emissions while maintaining bonding rate at a satisfactory level.
 
 ## Background
