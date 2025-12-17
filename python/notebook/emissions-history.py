@@ -25,7 +25,7 @@ def _():
 @app.cell
 def _(ROUNDS_PER_YEAR, json, os, pl):
     # Data loading
-    DATA_PATH = os.getenv("LPT_DATA_PATH", "../data/lpt-daily-data-22-24.json")
+    DATA_PATH = os.getenv("LPT_DATA_PATH", "../data/lpt-daily-data-22-25.json")
 
     with open(DATA_PATH) as h:
         data_json = json.load(h)
@@ -90,7 +90,7 @@ def _(ROUNDS_PER_YEAR, json, os, pl):
         ]).with_columns([
             ((pl.col("return-trailing-1y") - 1) * 100).alias("return-trailing-1y-%"),
             ((pl.col("adjusted-return-trailing-1y") - 1) * 100).alias("adjusted-return-trailing-1y-%")
-        ]).filter(pl.col("return-trailing-1y-%").is_not_null())
+        ])
 
     PREPARATIONS = [
         load_df_from_json, 
@@ -253,6 +253,108 @@ def _(df_diddle, mo, np, pl):
     mo.md(f"""
     *Lower 95% confidence interval for 180-day log bonding ratio diff:* {logit_to_percent(p05_180d):.6f}
     """)
+    return
+
+
+@app.cell
+def _(df, pl):
+    # DILUTION PLOTS
+    from datetime import date
+
+    dates = [date(2022,12,31), date(2023, 6, 30), date(2023, 12,31), date(2024,6,30), date(2024,12,31), date(2025,6,30), date(2025,11,20)]
+    epochs = ["H2 2022", "H1 2023", "H2 2023", "H1 2024", "H2 2024", "H1 2025", "H2 2025"]
+
+    df_2 = df.with_columns([
+        (100*(1 - (pl.col("total-supply").shift(180) / pl.col("total-supply")) ) ).alias("dilution-180d-%")
+    ])
+
+    # select rows with given dates
+    df_dilution_dates = df_2.filter(
+        pl.col("date").is_in(dates)
+    ).select(
+        ["date", "dilution-180d-%"]
+    ).with_columns([
+        pl.Series(epochs).alias("epoch")
+    ])
+
+    # Add a specific row for H1 2026
+    df_dilution_dates = df_dilution_dates.vstack(
+        pl.DataFrame({
+            "date": [date(2026, 6, 30)],
+            "dilution-180d-%": [12.0],
+            "epoch": ["H1 2026 (target)"]
+        })
+    )
+    return dates, df_dilution_dates
+
+
+@app.cell
+def _(alt, dates, df_dilution_dates):
+    # plot dilution on bar chart with bars ordered by date and labelled by epoch
+    # set the opacity of the last bar to a lower value
+    alt.Chart(df_dilution_dates).mark_bar(size=50).encode(
+        x=alt.X("epoch:N", sort=dates, axis=alt.Axis(title="Epoch")),
+        y=alt.Y("dilution-180d-%:Q", axis=alt.Axis(title="Semiannual Dilution (%)")),
+        opacity=alt.condition(
+            alt.datum.epoch == "H1 2026 (target)",
+            alt.value(0.3),
+            alt.value(1.0)
+        ),
+        tooltip=["epoch:N", "dilution-180d-%:Q"]
+    ).properties(width=800)
+    return
+
+
+@app.cell
+def _(np):
+    rng= np.random.default_rng(42)
+    arr = rng.normal(size=200)
+    arr2 = rng.normal(-0.4, 0.3, size=200)
+
+    # plot box and whisker plot of arr with whiskers at 90th and 10th percentiles using matplotlib
+    # don't show outliers
+    import matplotlib.pyplot as plt
+    fig, ax = plt.subplots()
+    ax.boxplot(arr, whis=[5, 95], showfliers=False)
+    ax.set_ylabel("Value")
+    plt.show()
+    return arr, arr2
+
+
+@app.cell
+def _(alt, arr, arr2, np, pl):
+    # crop outliers from arr at 95th and 5th percentiles
+
+    def plot_box_and_whiskers(data, label: str, significance=5):
+        q_low = np.percentile(data, significance/2)
+        q_high = np.percentile(data, 100 - significance/2)
+        data_cropped = data[(data >= q_low) & (data <= q_high)]
+
+        return alt.Chart(pl.DataFrame({"value": data_cropped})).mark_boxplot(extent="min-max").encode(
+            y=alt.Y("value:Q", axis=alt.Axis(title=label))
+        )
+
+    def plot_box_and_whiskers_multiple(data: pl.DataFrame, label: str, significance=5):
+        df = data.unpivot(
+            index=None,
+            on=data.columns,
+            variable_name="Policy",
+            value_name="value"
+        )
+        return alt.Chart(df).mark_boxplot(extent="min-max", size=60).encode(
+            x=alt.X("Policy:N", axis=alt.Axis(title="Policy")),
+            y=alt.Y("value:Q", axis=alt.Axis(title=label)),
+            color="Policy:N"
+        ).properties(width=400)
+
+    # Show bloxplot for arr and arr2 side by side on the same axes
+    # First, we're gonna unpivot arr and arr2 into a single DataFrame
+    df_boxplot = pl.DataFrame({
+        "No change": arr,
+        "Proposed change": arr2
+    })
+
+    plot_box_and_whiskers_multiple(df_boxplot, "Forecast 1Y trailing yield on 2026-07-01")
     return
 
 

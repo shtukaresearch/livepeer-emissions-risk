@@ -1059,6 +1059,175 @@ def _(mo, simulation_fig, slider_P_star, slider_sigma):
 
 
 @app.cell
+def _(
+    df,
+    feature_selector,
+    np,
+    params,
+    radio_horizon,
+    radio_paths,
+    simulate,
+    slider_gamma_max,
+    slider_gamma_min,
+):
+    def simulate_total_supply(start, I_paths):
+        return start * np.cumprod(1 + I_paths, axis=1)
+
+    def trailing_dilution(supply, window=207):
+        dilution = 1-supply[:, :-window] / supply[:, window:]
+        return dilution * 100
+
+    def trailing_yield(supply, bonding_rate, window=415):
+        # per round yield is change in supply divided by bonding rate
+        per_round_yield = (supply[:,1:] - supply[:,:-1]) / (supply[:,:-1] * bonding_rate[:, :-1])
+        # cumulative yield
+        cum_yield_factor = (1 + per_round_yield).cumprod(axis=1)
+        # trailing cumulative yield over window
+        return 100*(cum_yield_factor[:,window:] / cum_yield_factor[:,:-window] - 1)
+    
+    
+    
+
+    def simulate_paths(target_bonding_rate = 50, inflation_change = 500):
+        exog_cols = feature_selector.value
+        parameters = params()
+
+        # Adjusted Parameters:
+        parameters['P_star'] = target_bonding_rate /100 # adjust % value
+        parameters['gamma_max'] = slider_gamma_max.value /100 # adjust % value
+        parameters['gamma_min'] = slider_gamma_min.value /100 # adjust % value
+        parameters['sigma'] = inflation_change * 1e-9   # adjust to the correct value (ppb)
+        parameters['n_sims'] = int(radio_paths.value)
+        parameters['horizon_blocks'] = int(radio_horizon.value)
+
+        P_paths, I_paths, X_paths, X_test, y_test, o_beta = simulate(df, exog_cols, parameters)
+
+        total_supply_paths = simulate_total_supply(start=df['total-supply'].iloc[-1]/1e18, I_paths=I_paths)
+        # concatenate total_supply and P_paths with historic data
+        total_supply_full = np.zeros((total_supply_paths.shape[0], total_supply_paths.shape[1] + len(df)))
+        total_supply_full[:, :len(df)] = df['total-supply'].iloc[:].values / 1e18
+        total_supply_full[:, len(df):] = total_supply_paths
+    
+        P_full = np.zeros((P_paths.shape[0], P_paths.shape[1] + len(df)))
+        P_full[:, :len(df)] = df['participation-rate'].iloc[:].values
+        P_full[:, len(df):] = P_paths
+
+        return total_supply_full, P_full
+    return simulate_paths, trailing_dilution, trailing_yield
+
+
+@app.cell
+def _(np, simulate_paths):
+    import altair as alt
+    import polars as pl
+
+    def crop_to_significance(data, significance):
+        q_low = np.percentile(data, significance/2)
+        q_high = np.percentile(data, 100 - significance/2)
+        return data[(data >= q_low) & (data <= q_high)]
+
+    def plot_box_and_whiskers(data, label: str, significance=5):
+        data_cropped = crop_to_significance(data, significance)
+    
+        return alt.Chart(pl.DataFrame({"value": data_cropped})).mark_boxplot(extent="min-max").encode(
+            y=alt.Y("value:Q", axis=alt.Axis(title=label)).scale(zero=False)
+        ).properties(width=400)
+
+    def plot_box_and_whiskers_multiple(data: pl.DataFrame, label: str, significance=5):
+        df = data.unpivot(
+            index=None,
+            on=data.columns,
+            variable_name="Policy",
+            value_name="value"
+        )
+        return alt.Chart(df).mark_boxplot(extent="min-max", size=60).encode(
+            x=alt.X("Policy:N", axis=alt.Axis(title="Policy")),
+            y=alt.Y("value:Q", axis=alt.Axis(title=label)).scale(zero=False),
+            color="Policy:N"
+        ).properties(width=400)
+
+    # compute trailing dilution of simulations with parameters (50, 500) and (46, 700)
+    simulations = [
+        simulate_paths(target_bonding_rate = 50, inflation_change = 500),
+        simulate_paths(target_bonding_rate = 46, inflation_change = 700)
+    ]
+
+    SIGNIFICANCE=10
+    return (
+        SIGNIFICANCE,
+        alt,
+        crop_to_significance,
+        pl,
+        plot_box_and_whiskers_multiple,
+        simulations,
+    )
+
+
+@app.cell
+def _(
+    SIGNIFICANCE,
+    crop_to_significance,
+    pl,
+    plot_box_and_whiskers_multiple,
+    simulations,
+    trailing_dilution,
+):
+    data_dilution = pl.DataFrame({
+        "No change": crop_to_significance(trailing_dilution(simulations[0][0])[:,-1], significance=SIGNIFICANCE),
+        "Proposed change": crop_to_significance(trailing_dilution(simulations[1][0])[:,-1], significance=SIGNIFICANCE)
+    })
+    plot_box_and_whiskers_multiple(data_dilution, label="6-month Dilution")
+    return
+
+
+@app.cell
+def _(
+    SIGNIFICANCE,
+    alt,
+    crop_to_significance,
+    pd,
+    pl,
+    plot_box_and_whiskers_multiple,
+    simulations,
+    trailing_yield,
+):
+    data_trailing_yield = pl.DataFrame({
+        "No change": crop_to_significance(trailing_yield(*simulations[0])[:,-1], significance=SIGNIFICANCE),
+        "Proposed change": crop_to_significance(trailing_yield(*simulations[1])[:,-1], significance=SIGNIFICANCE)
+    })
+    plotz = plot_box_and_whiskers_multiple(data_trailing_yield, label="Predicted 1Y Trailing Yield on 2026-07-01")
+
+
+    threshold: str = "1Y trailing yield on 2025-11-20"
+
+    base = alt.Chart(pd.DataFrame({
+        'y': [73.38791078],
+        'label': [threshold]
+    }))
+    
+    line = base.mark_rule(strokeDash=[4,4], color='red').encode(
+        y='y:Q'
+    )
+
+    # add the following string as a text mark on line
+    text = base.mark_text(
+        align='center',
+        baseline='bottom',
+        dy=-5 
+    ).encode(
+        y='y:Q',
+        text='label:N'
+    )
+
+    yield_box_plot = (text + line + plotz).properties(width=400)
+
+    # save as svg
+    #yield_box_plot.save(f"yield_box_plot.png")
+    yield_box_plot
+    return
+
+
+@app.cell
 def _():
     return
 
