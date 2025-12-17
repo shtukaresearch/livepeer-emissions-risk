@@ -5,17 +5,23 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "altair>=5.5.0",
+    "altair>=6",
     "arrow>=1.4.0",
-    "marimo>=0.11.19",
+    "marimo>=0.17.7",
     "matplotlib>=3.10.1",
     "pandas>=2.2.3",
     "polars>=1.26.0",
     "pytz>=2025.1",
+    "pyzmq>=27.1.0",
     "requests>=2.32.5",
     "scikit-learn>=1.7.2",
     "scipy>=1.15.2",
     "statsmodels>=0.14.4",
     "urllib3>=2.3.0",
     "web3>=7.9.0",
+]
+
+[dependency-groups]
+dev = [
+    "marimo[lsp]>=0.17.7",
 ]
