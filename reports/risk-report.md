@@ -163,19 +163,7 @@ The sets of admissible tunings for various choices of value for the (OE) objecti
 
 ## Processes for ongoing maintenance
 
-All sources of uncertainty associated with these forecasts increase with time. In order to remain robust over time and continue to achieve objectives with high confidence, a protocol for ongoing monitoring, parameter updates, and incident response must be developed and followed.
-
-1. What are the possible elements of a risk-managed parameter setting framework for Livepeer issuance?
-
-   **Answer.** Elements are *monitoring*, *trigger and scheduled events,* *interventions*, *review*, and *research*.
-
-2. What are the main tradeoffs between various choices for those elements?
-
-   (Discussed in each of the corresponding sections.)
-
-3. What has to happen next in order to get a framework like that fleshed out and operational?
-
-   (The Transformation SPE should assemble a task force.)
+All sources of uncertainty associated with these forecasts increase with time. In order to remain robust over time and continue to achieve objectives with high confidence, a process for ongoing monitoring, parameter updates, incident response, and emissions protocol R&D must be developed and followed.
 
 ### Monitoring
 
@@ -232,6 +220,7 @@ The only conceivable intervention is to investigate possible structural causes f
 
 Excessive emissions can be prevented *a priori* with a hard cap. However, the community may prefer to allow emissions to rise to a high level temporarily as a stimulus to mitigate an ephemeral low bonding rate, and instead manually control for quarterly, semiannual, or annual emissions targets.
 
+Possible actions:
 * *Ephemeral case*. Do nothing. Ephemeral high emissions can be used as a deliberate stimulus to correct an ephemeral low bonding rate.
 * Revise emission control parameters.
 
@@ -247,7 +236,7 @@ A process for revisiting the tuning looks as follows:
 
 ### Research directions
 
-To pre-empt the threat of persistently excessive emissions
+To reduce the burden of manual interventions and pre-empt the threat of persistently excessive emissions, the Livepeer Community should invest in emissions protocol R&D. Topics include:
 
 * More detailed strategy and objective framework for emissions control, including budget categories.
 * Identify structural factors limiting participation.
