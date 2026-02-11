@@ -3,3 +3,4 @@ __marimo__/
 .vscode/
 .venv/
 __pycache__/
+data/
