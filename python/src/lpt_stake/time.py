@@ -60,7 +60,7 @@ def estimate_round_number(dt: datetime) -> int:
     return int(REFERENCE_ROUND + delta_seconds // SECONDS_PER_ROUND)
 
 
-def estimate_datetime(round_num: float) -> datetime:
+def estimate_datetime(round_num: int) -> datetime:
     """Estimate the UTC datetime at which a given round starts.
 
     Uses a linear approximation anchored to ``REFERENCE_ROUND`` /
@@ -69,7 +69,7 @@ def estimate_datetime(round_num: float) -> datetime:
     Parameters
     ----------
     round_num
-        Round number (may be fractional).
+        Round number.
 
     Returns
     -------
@@ -80,10 +80,11 @@ def estimate_datetime(round_num: float) -> datetime:
     return REFERENCE_DATETIME + timedelta(seconds=delta_seconds)
 
 
-def estimate_round_count(delta: timedelta) -> float:
-    """Convert a timedelta to an estimated number of rounds.
+def estimate_round_count(delta: timedelta) -> int:
+    """Convert a timedelta to an estimated number of complete rounds.
 
     Pure arithmetic using ``SECONDS_PER_ROUND``; no reference point needed.
+    The result is floored to count only complete rounds.
 
     Parameters
     ----------
@@ -92,13 +93,13 @@ def estimate_round_count(delta: timedelta) -> float:
 
     Returns
     -------
-    float
-        Estimated number of rounds (may be fractional or negative).
+    int
+        Estimated number of complete rounds.
     """
-    return delta.total_seconds() / SECONDS_PER_ROUND
+    return int(delta.total_seconds() // SECONDS_PER_ROUND)
 
 
-def estimate_timedelta(rounds: float) -> timedelta:
+def estimate_timedelta(rounds: int) -> timedelta:
     """Convert a number of rounds to an estimated timedelta.
 
     Pure arithmetic using ``SECONDS_PER_ROUND``; no reference point needed.
@@ -106,7 +107,7 @@ def estimate_timedelta(rounds: float) -> timedelta:
     Parameters
     ----------
     rounds
-        Number of rounds (may be fractional or negative).
+        Number of rounds.
 
     Returns
     -------
