@@ -177,59 +177,77 @@ class TestBuildDesignMatrix:
         assert result.columns[0] == "intercept"
         assert result.columns[-1] == "target"
 
-    def test_target_is_shifted(self, sample_df):
-        """The target column should be the next-step value."""
+    def test_target_evaluated_as_is(self, sample_df):
+        """The target column should be the expression evaluated directly,
+        with no implicit shifting."""
         result = build_design_matrix(
             sample_df,
             target=pl.col("participation"),
             features=[pl.col("inflation")],
         )
-        # The target at row i should equal participation at row i+1 in the
-        # original DataFrame.  The last row of the original is lost due to
-        # the shift.
+        original_participation = sample_df["participation"].to_list()
+        target_values = result["target"].to_list()
+        for orig, target in zip(original_participation, target_values):
+            assert target == pytest.approx(orig)
+
+    def test_caller_can_shift_target(self, sample_df):
+        """Next-step prediction is the caller's responsibility via shift(-1)."""
+        result = build_design_matrix(
+            sample_df,
+            target=pl.col("participation").shift(-1),
+            features=[pl.col("inflation")],
+        )
+        # shift(-1) loses the last row
+        assert len(result) == len(sample_df) - 1
         original_participation = sample_df["participation"].to_list()
         target_values = result["target"].to_list()
         for i, t in enumerate(target_values):
             assert t == pytest.approx(original_participation[i + 1])
 
-    def test_row_count_after_shift(self, sample_df):
-        """One row lost to the target shift."""
+    def test_no_row_loss_with_plain_target(self, sample_df):
+        """A plain column reference as target loses no rows."""
         result = build_design_matrix(
             sample_df,
             target=pl.col("participation"),
             features=[pl.col("inflation")],
         )
-        assert len(result) == len(sample_df) - 1
+        assert len(result) == len(sample_df)
 
-    def test_diff_feature_loses_additional_row(self, sample_df):
-        """A diff() feature introduces one more null row."""
+    def test_diff_feature_loses_one_row(self, sample_df):
+        """A diff() feature introduces one null row."""
         result = build_design_matrix(
             sample_df,
             target=pl.col("participation"),
             features=[pl.col("participation").diff()],
         )
-        # One row lost to target shift, one to diff
-        assert len(result) == len(sample_df) - 2
+        assert len(result) == len(sample_df) - 1
 
-    def test_raises_on_null_inputs(self):
-        """Input DataFrame with nulls should raise, not silently drop rows."""
+    def test_null_inputs_dropped_and_logged(self, caplog):
+        """Rows with nulls in the input are dropped and logged."""
         df = pl.DataFrame(
             {
                 "participation": [0.4, None, 0.45, 0.43],
                 "inflation": [200_000] * 4,
             }
         )
-        with pytest.raises(ValueError, match="[Nn]ull"):
-            build_design_matrix(
+        import logging
+
+        with caplog.at_level(logging.DEBUG, logger="lpt_stake.features"):
+            result = build_design_matrix(
                 df,
                 target=pl.col("participation"),
                 features=[pl.col("inflation")],
             )
+        assert len(result) == 3
+        # Row index and null column name appear in debug log
+        assert "1" in caplog.text
+        assert "target" in caplog.text
 
     def test_no_nulls_in_output(self, sample_df):
+        """Nulls introduced by expressions (diff, shift) are dropped."""
         result = build_design_matrix(
             sample_df,
-            target=pl.col("participation"),
+            target=pl.col("participation").shift(-1),
             features=[pl.col("participation").diff()],
         )
         assert result.null_count().row(0) == tuple(0 for _ in result.columns)

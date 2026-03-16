@@ -7,7 +7,11 @@ compose with ``.pipe()``.
 
 from __future__ import annotations
 
+import logging
+
 import polars as pl
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -77,21 +81,27 @@ def build_design_matrix(
     """Assemble a design matrix for regression.
 
     Evaluates *target* and *features* against *df*, adds an intercept column,
-    shifts the target by −1 to create a next-step prediction target, and drops
-    rows where nulls were introduced by the shift or by feature expressions
-    (e.g. ``diff()``).
+    and drops rows where nulls were introduced by feature or target
+    expressions (e.g. ``diff()``, ``shift(-1)``).  Dropped rows are logged
+    at DEBUG level with their index and the null column(s).
 
-    The input DataFrame must be null-free in the columns referenced by
-    *target* and *features*.  If nulls are present in the input, a
-    ``ValueError`` is raised.
+    This function does **not** shift the target.  If you want next-step
+    prediction (i.e. features at time *t* predict target at time *t* + 1),
+    apply the shift in the target expression yourself::
+
+        build_design_matrix(
+            df,
+            target=pl.col("participation").shift(-1),
+            features=[...],
+        )
 
     Parameters
     ----------
     df
-        Round-indexed DataFrame.  Must not contain nulls in referenced columns.
+        Round-indexed DataFrame.
     target
-        Polars expression for the prediction target (e.g.
-        ``pl.col("participation")``).
+        Polars expression for the prediction target.  Applied as-is — no
+        shifting is performed by this function.
     features
         List of Polars expressions for the feature columns.
 
@@ -99,38 +109,46 @@ def build_design_matrix(
     -------
     pl.DataFrame
         Columns are ``[intercept, feature_0, ..., feature_n, target]``.
-        The intercept is a column of ones.  The target is the next-step
-        value.  Rows with nulls (from shifting or feature transforms) are
-        dropped.
-
-    Raises
-    ------
-    ValueError
-        If *df* contains nulls in the columns referenced by *target* or
-        *features*.
+        The intercept is a column of ones.  Rows with nulls (from feature
+        or target expressions) are dropped.
     """
-    # Check for nulls in input
-    null_counts = df.null_count()
-    total_nulls = sum(null_counts.row(0))
-    if total_nulls > 0:
-        null_cols = [
-            col for col in df.columns if null_counts[col][0] > 0
-        ]
-        raise ValueError(
-            f"Input DataFrame contains nulls in columns: {null_cols}. "
-            "Clean the data before calling build_design_matrix."
-        )
-
     # Evaluate features and target
     feature_exprs = [
         feat.alias(f"feature_{i}") for i, feat in enumerate(features)
     ]
-    target_expr = target.shift(-1).alias("target")
+    target_expr = target.alias("target")
 
     assembled = df.select(
         pl.lit(1.0).alias("intercept"),
         *feature_exprs,
         target_expr,
-    )
+    ).with_row_index("__row_idx__")
 
-    return assembled.drop_nulls()
+    # Identify and log rows with nulls before dropping
+    null_mask = assembled.select(
+        pl.any_horizontal(
+            pl.col(c).is_null() for c in assembled.columns if c != "__row_idx__"
+        ).alias("has_null")
+    )["has_null"]
+
+    if null_mask.any():
+        null_rows = assembled.filter(null_mask)
+        for row in null_rows.iter_rows(named=True):
+            idx = row["__row_idx__"]
+            null_cols = [
+                c for c in row
+                if c != "__row_idx__" and row[c] is None
+            ]
+            logger.debug(
+                "build_design_matrix: dropping row %d (null in %s)",
+                idx,
+                null_cols,
+            )
+        n_dropped = null_rows.height
+        logger.info(
+            "build_design_matrix: dropped %d of %d rows due to nulls",
+            n_dropped,
+            assembled.height,
+        )
+
+    return assembled.filter(~null_mask).drop("__row_idx__")
