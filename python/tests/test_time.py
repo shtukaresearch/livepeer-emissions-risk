@@ -24,17 +24,30 @@ class TestEstimateRoundNumber:
         """The reference datetime must map exactly to the reference round."""
         assert estimate_round_number(REFERENCE_DATETIME) == REFERENCE_ROUND
 
+    def test_returns_int(self):
+        assert isinstance(estimate_round_number(REFERENCE_DATETIME), int)
+
     def test_one_round_later(self):
         dt = REFERENCE_DATETIME + timedelta(seconds=SECONDS_PER_ROUND)
-        assert estimate_round_number(dt) == pytest.approx(REFERENCE_ROUND + 1)
+        assert estimate_round_number(dt) == REFERENCE_ROUND + 1
 
     def test_one_round_earlier(self):
         dt = REFERENCE_DATETIME - timedelta(seconds=SECONDS_PER_ROUND)
-        assert estimate_round_number(dt) == pytest.approx(REFERENCE_ROUND - 1)
+        assert estimate_round_number(dt) == REFERENCE_ROUND - 1
 
-    def test_half_round(self):
+    def test_floors_like_contract(self):
+        """A datetime halfway through a round should still return that round
+        (integer division floors)."""
         dt = REFERENCE_DATETIME + timedelta(seconds=SECONDS_PER_ROUND / 2)
-        assert estimate_round_number(dt) == pytest.approx(REFERENCE_ROUND + 0.5)
+        assert estimate_round_number(dt) == REFERENCE_ROUND
+
+    def test_just_before_next_round(self):
+        dt = REFERENCE_DATETIME + timedelta(seconds=SECONDS_PER_ROUND - 1)
+        assert estimate_round_number(dt) == REFERENCE_ROUND
+
+    def test_exactly_at_next_round(self):
+        dt = REFERENCE_DATETIME + timedelta(seconds=SECONDS_PER_ROUND)
+        assert estimate_round_number(dt) == REFERENCE_ROUND + 1
 
     def test_naive_datetime_raises(self):
         with pytest.raises(ValueError, match="timezone-aware"):
@@ -42,12 +55,9 @@ class TestEstimateRoundNumber:
 
     def test_non_utc_timezone_works(self):
         """A non-UTC timezone should still give a correct result."""
-        from datetime import timezone as tz
-
-        eastern = tz(timedelta(hours=-5))
-        # 2026-01-01 00:00 UTC = 2025-12-31 19:00 EST
+        eastern = timezone(timedelta(hours=-5))
         dt_eastern = REFERENCE_DATETIME.astimezone(eastern)
-        assert estimate_round_number(dt_eastern) == pytest.approx(REFERENCE_ROUND)
+        assert estimate_round_number(dt_eastern) == REFERENCE_ROUND
 
 
 class TestEstimateDatetime:
@@ -73,27 +83,33 @@ class TestEstimateDatetime:
 
 
 class TestRoundTrip:
-    """Verify that estimate_round_number and estimate_datetime are inverses."""
+    """Verify that estimate_datetime → estimate_round_number recovers the
+    round (for integer inputs), and that estimate_round_number →
+    estimate_datetime recovers the start of that round."""
 
     @pytest.mark.parametrize("round_num", [0, 1000, 4048, 5000, 10000])
     def test_round_to_datetime_to_round(self, round_num):
+        """estimate_datetime of an int round, fed back into
+        estimate_round_number, should return the same int."""
         dt = estimate_datetime(round_num)
         recovered = estimate_round_number(dt)
-        assert recovered == pytest.approx(round_num, abs=1e-9)
+        assert recovered == round_num
 
     @pytest.mark.parametrize(
         "dt",
         [
             datetime(2024, 1, 1, tzinfo=timezone.utc),
-            datetime(2026, 1, 1, tzinfo=timezone.utc),
+            datetime(2026, 6, 15, 12, 30, 0, tzinfo=timezone.utc),
             datetime(2027, 6, 15, 12, 30, 0, tzinfo=timezone.utc),
         ],
     )
-    def test_datetime_to_round_to_datetime(self, dt):
+    def test_datetime_to_round_to_datetime_gives_round_start(self, dt):
+        """Going datetime → round → datetime should give the *start* of that
+        round, which is ≤ the original datetime and within one round of it."""
         r = estimate_round_number(dt)
-        recovered = estimate_datetime(r)
-        # Allow sub-millisecond floating point error
-        assert abs((recovered - dt).total_seconds()) < 0.001
+        round_start = estimate_datetime(r)
+        assert round_start <= dt
+        assert (dt - round_start).total_seconds() < SECONDS_PER_ROUND
 
 
 class TestEstimateRoundCount:

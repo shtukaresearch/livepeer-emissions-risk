@@ -294,11 +294,13 @@ SECONDS_PER_ROUND = SECONDS_PER_ETH_SLOT * ETH_SLOTS_PER_ROUND  # 76524
 ROUNDS_PER_YEAR ≈ 365.25 * 86400 / SECONDS_PER_ROUND ≈ 412.5
 ```
 
-Reference point for estimated time conversion (verified on-chain 2026-03-15):
+Reference point for estimated time conversion (verified on-chain 2026-03-15 via
+`RoundsManager.currentRound()` and `currentRoundStartBlock()`; start block
+L1 24132771 resolved to timestamp via Etherscan):
 
 ```
 REFERENCE_ROUND = 4048
-REFERENCE_DATETIME = datetime(2026, 1, 1, tzinfo=timezone.utc)
+REFERENCE_DATETIME = datetime(2025, 12, 31, 13, 1, 11, tzinfo=timezone.utc)
 ```
 
 ### Historical notes on round length

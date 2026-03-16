@@ -41,10 +41,12 @@ ROUNDS_PER_YEAR: float = 365.25 * 86_400 / SECONDS_PER_ROUND
 # ---------------------------------------------------------------------------
 
 REFERENCE_ROUND: int = 4048
-"""A known Livepeer round number at ``REFERENCE_DATETIME``.
+"""A known Livepeer round number whose start time is ``REFERENCE_DATETIME``.
 
-Verified on-chain via ``RoundsManager.currentRound()`` on 2026-03-15.
+Verified on-chain via ``RoundsManager.currentRound()`` and
+``currentRoundStartBlock()`` on 2026-03-15.  The start block (L1 24132771)
+was resolved to a timestamp via Etherscan.
 """
 
-REFERENCE_DATETIME: datetime = datetime(2026, 1, 1, tzinfo=timezone.utc)
-"""UTC wall-clock time at which ``REFERENCE_ROUND`` was current."""
+REFERENCE_DATETIME: datetime = datetime(2025, 12, 31, 13, 1, 11, tzinfo=timezone.utc)
+"""UTC wall-clock time at which round ``REFERENCE_ROUND`` started."""

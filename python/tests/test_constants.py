@@ -52,7 +52,12 @@ class TestReferencePoint:
     def test_reference_datetime_is_utc(self):
         assert REFERENCE_DATETIME.tzinfo is timezone.utc
 
-    def test_reference_datetime_is_2026(self):
-        assert REFERENCE_DATETIME.year == 2026
-        assert REFERENCE_DATETIME.month == 1
-        assert REFERENCE_DATETIME.day == 1
+    def test_reference_datetime_is_round_boundary(self):
+        """Reference datetime should be the actual start of REFERENCE_ROUND,
+        resolved from L1 block 24132771 via Etherscan."""
+        assert REFERENCE_DATETIME.year == 2025
+        assert REFERENCE_DATETIME.month == 12
+        assert REFERENCE_DATETIME.day == 31
+        assert REFERENCE_DATETIME.hour == 13
+        assert REFERENCE_DATETIME.minute == 1
+        assert REFERENCE_DATETIME.second == 11

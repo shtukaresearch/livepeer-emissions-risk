@@ -32,12 +32,12 @@ _ETHERSCAN_API_URL = "https://api.etherscan.io/v2/api?chainid=42161"
 # ---------------------------------------------------------------------------
 
 
-def estimate_round_number(dt: datetime) -> float:
+def estimate_round_number(dt: datetime) -> int:
     """Estimate the Livepeer round number at a given datetime.
 
     Uses a linear approximation anchored to ``REFERENCE_ROUND`` /
-    ``REFERENCE_DATETIME``.  The result is a float; callers may round or
-    truncate as appropriate.
+    ``REFERENCE_DATETIME``.  The result is floored to an integer, matching
+    the on-chain contract's integer division.
 
     Parameters
     ----------
@@ -46,8 +46,8 @@ def estimate_round_number(dt: datetime) -> float:
 
     Returns
     -------
-    float
-        Estimated round number (may be fractional).
+    int
+        Estimated round number.
 
     Raises
     ------
@@ -57,7 +57,7 @@ def estimate_round_number(dt: datetime) -> float:
     if dt.tzinfo is None:
         raise ValueError("dt must be timezone-aware")
     delta_seconds = (dt - REFERENCE_DATETIME).total_seconds()
-    return REFERENCE_ROUND + delta_seconds / SECONDS_PER_ROUND
+    return int(REFERENCE_ROUND + delta_seconds // SECONDS_PER_ROUND)
 
 
 def estimate_datetime(round_num: float) -> datetime:
