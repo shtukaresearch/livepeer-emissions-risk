@@ -9,7 +9,7 @@ simulation loop.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol
 
 import numpy as np
 from numpy.typing import NDArray
@@ -91,7 +91,6 @@ class SimulationResult:
 # ---------------------------------------------------------------------------
 
 
-@runtime_checkable
 class EmissionsSchedule(Protocol):
     """State machine for the per-round emissions-rate update rule.
 
@@ -125,7 +124,6 @@ class EmissionsSchedule(Protocol):
         ...
 
 
-@runtime_checkable
 class ParticipationModel(Protocol):
     """Predicts the next-round participation rate from current state.
 
@@ -184,7 +182,6 @@ class ParticipationModel(Protocol):
         ...
 
 
-@runtime_checkable
 class NoiseModel(Protocol):
     """Draws residual noise samples for the participation model."""
 
@@ -206,7 +203,6 @@ class NoiseModel(Protocol):
         ...
 
 
-@runtime_checkable
 class ExogenousSampler(Protocol):
     """Samples forward paths for exogenous variables from historical data."""
 
