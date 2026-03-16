@@ -28,4 +28,5 @@ build-backend = "hatchling.build"
 [dependency-groups]
 dev = [
     "marimo[lsp]>=0.17.7",
+    "pytest>=9.0.2",
 ]
