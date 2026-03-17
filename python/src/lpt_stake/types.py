@@ -295,7 +295,7 @@ class ExogenousSampler(Protocol):
 
     def sample(
         self,
-        historical: pl.DataFrame,
+        historical: NDArray[np.floating],
         n_paths: int,
         horizon: int,
         rng: Generator,
@@ -305,7 +305,8 @@ class ExogenousSampler(Protocol):
         Parameters
         ----------
         historical
-            Historical exogenous data as a Polars DataFrame.
+            Historical exogenous data as a numpy array, shape
+            ``(T, n_features)``.
         n_paths
             Number of Monte Carlo paths.
         horizon
