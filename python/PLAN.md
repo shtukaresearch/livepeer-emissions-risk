@@ -15,11 +15,11 @@ src/lpt_stake/
     types.py                 # Dataclasses (SimulationState, SimulationResult) and Protocols
     time.py                  # Estimated round↔datetime conversion + real timestamp→block lookup
     data.py                  # Raw daily data loading and daily-to-round reindexing
-    features.py              # Polars expression plugins, presets, design matrix assembly
-    model.py                 # Ridge regression fitting (statsmodels)
-    emissions_schedule.py    # EmissionsSchedule protocol + SignedStepSchedule
+    features.py              # Feature protocol, ColumnFeature, numpy transforms, design matrix assembly
+    model.py                 # Ridge regression fitting (closed-form, intercept unpenalised)
+    emissions_schedule.py    # EmissionsSchedule protocol + SignedStepSchedule, ClampedSignedStepSchedule
     exogenous.py             # ExogenousSampler protocol + BootstrapSampler, AR1Sampler
-    simulation.py            # ParticipationModel, NoiseModel, Simulator
+    simulation.py            # ParticipationModel classes, NoiseModel, Simulator, Ω management
     derived.py               # Post-simulation derived quantities (total supply, yield, dilution)
 ```
 
@@ -29,16 +29,19 @@ src/lpt_stake/
 
 - **`SimulationState`** — simulation starting point: `participation_rate` (float, [0,1]), `emissions_rate_per_round` (float, parts per billion).
 - **`SimulationResult`** — simulation output: `participation_rate_paths` (ndarray), `emissions_rate_per_round_paths` (ndarray). Both shape `(n_paths, horizon+1)`.
-- **`SignedStepSchedule`** — the current Livepeer emissions rule: `target_participation_rate`, `emissions_change`, `emissions_floor`, `emissions_ceiling`.
-- **`RidgeParticipationModel`** — wraps fitted ridge model, feature transforms, noise, and exogenous sampler.
-- **`Simulator`** — composes an `EmissionsSchedule` and a `ParticipationModel`, exposes `.run()`.
+- **`RidgeResult`** — fitted ridge model with coefficients, residuals, standard errors, effective df, AIC, BIC, and `.predict()`.
+- **`SignedStepSchedule`** / **`ClampedSignedStepSchedule`** — the current Livepeer emissions rule (unbounded / with floor and ceiling).
+- **`GaussianNoise`** / **`BootstrapNoise`** — concrete noise model implementations.
+- **`Simulator`** — allocates sample path arrays, composes an `EmissionsSchedule` and a `ParticipationModel`, runs simulation loop.
 
 ### Protocols (pluggable interfaces)
 
-- **`EmissionsSchedule`** — `update(emissions_rate_per_round, participation_rate) -> ndarray`. The state machine for emissions rate updates.
-- **`ParticipationModel`** — `predict_next(participation_rate, emissions_rate, step, rng) -> ndarray`. Maps raw state to next participation rate.
-- **`NoiseModel`** — `__call__(n: int, rng: Generator) -> ndarray`. Ship `GaussianNoise` and `BootstrapNoise`.
-- **`ExogenousSampler`** — `sample(historical, n_paths, horizon, rng) -> ndarray`. Ship `BootstrapSampler` and `AR1Sampler`.
+- **`Feature`** — unbound transform with column dependencies. `bind(data) -> BoundFeature`. For stateful features (e.g. trailing yield). String column names are wrapped internally by the model constructor.
+- **`BoundFeature`** — `evaluate(end, cache) -> ndarray`, `step(t) -> ndarray`, `rebind(data) -> BoundFeature`. Holds reference to data array.
+- **`EmissionsSchedule`** — `update(emissions_rate_per_round, participation_rate) -> ndarray`.
+- **`ParticipationModel`** — central simulation object. Owns features, fitting, and prediction. Three concrete implementations: `RawParticipationModel`, `LogitParticipationModel`, `DiffLogitParticipationModel`. See Stage 4.
+- **`NoiseModel`** — `__call__(n: int, rng: Generator) -> ndarray`.
+- **`ExogenousSampler`** — `sample(historical, n_paths, horizon, rng) -> ndarray`.
 
 ## Data Flow and Contracts
 
@@ -71,74 +74,147 @@ Raw data is daily; the model operates on rounds. The library is responsible for 
 
 ### Stage 2: Feature engineering (`features.py`)
 
-Feature engineering uses Polars expressions as the composition primitive. The library provides domain-specific expression plugins (custom transforms) and a dictionary of named presets for common patterns. The notebook user can mix presets with arbitrary Polars expressions.
+Features that don't depend on simulation output are pre-computed in Polars during data preparation and added as columns to the input DataFrame. The model constructor receives column names (strings) for these. For stateful features that depend on simulation output (e.g. trailing yield), the user passes a `Feature` object.
 
-#### Expression plugins (custom transforms)
+#### Polars expression plugins
 
-These are functions that take and return `pl.Expr`, so they compose with `.pipe()`:
+These take and return `pl.Expr`, composing with `.pipe()`. Used during data preparation in notebooks:
 
-- `logit(expr) -> pl.Expr` — log(x / (1-x)), for participation rate
-- `expit(expr) -> pl.Expr` — inverse logit, 1 / (1 + exp(-x))
-- `rescale_around(expr, center) -> pl.Expr` — 2 * (x - center), e.g. F&G around 50
-- `annualise_ppb(expr, rounds_per_year) -> pl.Expr` — (1 + x/1e9)^rounds_per_year - 1
+- `logit(expr)` — `log(x / (1-x))`, for participation rate
+- `expit(expr)` — inverse logit, `1 / (1 + exp(-x))`
+- `annualise_ppb(expr, rounds_per_year)` — `(1 + x/1e9)^rounds_per_year - 1`
 
-The logit/expit pair is also used in the simulation stage (Stage 4) for inverse-transforming predicted values back to [0,1].
+These are for data preparation only. The model operates on numpy arrays.
 
-#### Presets
+#### Feature and BoundFeature protocols
 
-A dictionary of named `pl.Expr` for common column recipes:
+A `Feature` is an unbound transform with column dependencies that can be bound to data. A `BoundFeature` is the bound version — it holds a reference to data and can compute values either vectorised or incrementally.
 
+```python
+class Feature(Protocol):
+    """An unbound feature with column dependencies.
+
+    Stateful features (e.g. trailing_yield) implement this protocol
+    and carry their column dependencies as column name strings.
+    """
+
+    def bind(self, data: NDArray) -> BoundFeature:
+        """Bind to column data.
+
+        Parameters
+        ----------
+        data
+            Column data sliced by the caller: shape (T,) for fitting,
+            (n_paths, T) for simulation.  For multi-column features,
+            shape (T, k) or (n_paths, T, k).
+        """
+        ...
+
+class BoundFeature(Protocol):
+    def evaluate(self, end: int | None = None, cache: bool = False) -> NDArray:
+        """Compute feature values over the data, up to index end.
+
+        With end=None: full time axis (fitting).
+        With end=t0, cache=True: compute up to t0 and prepare
+        intermediate state for subsequent step() calls.
+
+        1D data: returns shape (T,) or (end,).
+        2D data: returns shape (n_paths, T) or (n_paths, end).
+        """
+        ...
+
+    def step(self, t: int) -> NDArray:
+        """Feature value at time t (incremental).
+        Scalar for 1D data, shape (n_paths,) for 2D data."""
+        ...
+
+    def rebind(self, data: NDArray) -> BoundFeature:
+        """Create a new BoundFeature on different data, same transform."""
+        ...
 ```
-PRESETS = {
-    "P":              pl.col("bonded") / pl.col("total-supply"),
-    "logit_P":        (pl.col("bonded") / pl.col("total-supply")).pipe(logit),
-    "logit_P_diff":   (pl.col("bonded") / pl.col("total-supply")).pipe(logit).diff(),
-    "I":              pl.col("inflation") / 1e9,
-    "I_annual":       pl.col("inflation").pipe(annualise_ppb, ROUNDS_PER_YEAR),
-    "fng_extreme":    pl.col("fear_greed_index").pipe(rescale_around, center=50),
-    "fng_extreme_abs": pl.col("fear_greed_index").pipe(rescale_around, center=50).abs(),
-    ...
-}
+
+#### How the model constructor processes features
+
+The `ParticipationModel` constructor receives a list where each element is either a column name (string) or a `Feature` object:
+
+```python
+model = LogitParticipationModel(
+    features=[
+        "participation_rate",     # pre-computed column (could be logit-transformed in data prep)
+        "inflation_annual",       # pre-computed: annualise_ppb applied in data prep
+        "fear_greed",             # raw column
+        trailing_yield("inflation", "participation_rate", window=412),  # stateful Feature
+    ],
+    df=round_df,
+    alpha=0.1,
+    noise=GaussianNoise(0.01),
+)
 ```
 
-Presets are convenience only. The notebook user can ignore them and write raw Polars expressions, or define their own.
+For each element:
+1. **String**: the constructor resolves the column name against `df.columns`, slices the column from the numpy array, and wraps in an internal `BoundColumnFeature` (identity transform).
+2. **`Feature` object** (e.g. from `trailing_yield(...)`): the constructor inspects its column dependencies, slices the relevant columns, and calls `feature.bind(data)`.
+
+Column name resolution happens once in the constructor. After that, everything is numpy arrays and integer indices.
+
+> **Note — future convenience methods:** It will be useful to allow certain lightweight transformations to be passed in the features list without pre-computing columns. For example, `lag("fear_greed", n)` would let the user iterate over different lag values without creating N differently-named columns in the DataFrame. These can be added as convenience factories that return Feature objects. Not needed now, but the `Feature` protocol supports this cleanly.
+
+#### Concrete bound feature classes
+
+**`BoundColumnFeature`** (internal) — Stateless. Holds a reference to column data and an optional numpy transform. `evaluate` returns `self.transform(self.data[..., :end])`. `step(t)` returns `self.transform(self.data[..., t])`. Cache is ignored (nothing to cache). Covers the vast majority of use cases.
+
+**Stateful bound features** (e.g. trailing compounded yield) — For the rare case where a feature depends on simulation-generated quantities over a rolling window. `evaluate(end=t0, cache=True)` computes up to t0 and saves intermediate accumulators. `step(t)` updates the cached state incrementally. Reference the data array directly for lookback — no copying. For current needs, only trailing yield is anticipated; others are a future iteration.
+
+Derived columns that don't depend on simulation output (ratios, rescaling, etc.) are computed in Polars during data preparation and added as new columns to the input DataFrame before model construction.
 
 #### Design matrix assembly
 
-- `build_design_matrix(df, target: pl.Expr, features: list[pl.Expr]) -> pl.DataFrame` — evaluates the target and feature expressions against the round-indexed DataFrame, adds an intercept column, shifts target by -1 to get the next-step prediction target, drops resulting nulls. Returns a single DataFrame with columns `[intercept, feature_0, ..., feature_n, target]`.
-
-**Contract out:** A Polars DataFrame with named columns. `target` column is the next-step value. Feature columns are whatever the user specified — the library doesn't prescribe their names or order beyond the intercept.
+`build_design_matrix` is retained as a utility for interactive use in the diagnostics notebook. The `ParticipationModel.fit()` method uses `BoundFeature.evaluate()` to assemble the design matrix internally.
 
 No `train_test_split` in the library — that's a diagnostic notebook concern (see Notebook Structure below).
 
 ### Stage 3: Fit model (`model.py`)
 
-- `fit_ridge(df: pl.DataFrame, target_col: str, alpha: float) -> RegressionResult` — fit ridge regression on the design matrix. Returns a result object with `.predict()`, `.params`, `.resid`.
+`fit_ridge(dm, target_col, alpha) -> RidgeResult` — closed-form ridge regression with the intercept excluded from regularisation (Hastie et al., ESL Section 3.4.1). Returns `RidgeResult` with `.predict()`, `.coefficients`, `.residuals`, `.residual_std`, `.coefficient_std_errors`, `.effective_df`, `.aic`, `.bic`.
 
-Alpha selection (cross-validation or otherwise) is not handled inside `fit_ridge`. The diagnostics notebook is responsible for evaluating different alphas and choosing one; the inference notebook passes the chosen alpha directly.
+Alpha selection is not in the library — diagnostic notebook concern.
 
-#### statsmodels vs scikit-learn for ridge
+`fit_ridge` is a low-level function. In the simulation pipeline, the `ParticipationModel.fit()` method prepares features and target from `sample_path_historic`, then delegates to `fit_ridge`. The diagnostics notebook can also call `fit_ridge` directly for exploring configurations.
 
-**statsmodels** (`OLS.fit_regularized(L1_wt=0)`): returns a rich result object with `.predict()`, `.params` (named coefficients), `.resid`, plus diagnostic statistics (confidence intervals, R², AIC/BIC). This is useful for the diagnostics notebook. Downside: no built-in cross-validated alpha selection — you write the CV loop yourself.
-
-**scikit-learn** (`RidgeCV`): built-in efficient leave-one-out or K-fold CV for alpha selection. But the fitted model is opaque — you get `.coef_` and `.predict()` but no statistical diagnostics without computing them manually.
-
-Recommendation: use **statsmodels** for the fit, since the diagnostics notebook benefits from the rich result object and we need to control the CV strategy anyway (the current notebook's CV is entangled with inference in ways we want to undo). Write a small alpha-selection utility in the diagnostics notebook using statsmodels fits across a grid.
-
-**Contract out:** A statsmodels `RegressionResults`-like object. The simulation stage needs `.predict()` and `.resid` only. The diagnostics notebook uses the full interface.
+**Contract out:** `RidgeResult`. The simulation stage needs `.predict()` and `.residuals` only. The diagnostics notebook uses the full interface.
 
 ### Stage 4: Simulate (`simulation.py`, `emissions_schedule.py`, `exogenous.py`)
 
-The simulation loop recurses two steps each round:
+#### Sample path arrays
 
-1. `I' = schedule.update(I, P)` — emissions schedule state machine
-2. `P' = model.predict_next(P, I', step, rng)` — participation model
+Two data arrays carry state through the pipeline:
 
-Both operate in natural units (participation in [0,1], emissions rate in parts per billion). All transform logic is internal to the model.
+- **`sample_path_historic`** — 2D numpy array `(T, n_cols)`. Converted from the round-indexed Polars DataFrame by the ParticipationModel constructor. Columns match the DataFrame column order. Used for fitting.
+
+- **`sample_path_simulated`** — 3D numpy array `(n_paths, lookback + horizon + 1, n_cols)`. Allocated by the Simulator. The first `lookback` rows contain the tail of `sample_path_historic`, broadcast to all paths. `lookback` is the maximum lookback required by any feature (e.g. ~412 for 1-year trailing yield). The overhead of broadcasting is negligible at our data sizes (few hundred rows, <10 columns).
+
+Columns are identified by index (resolved from DataFrame column names at model construction time):
+
+| Index | Column | Filled by |
+|-------|--------|-----------|
+| 0 | participation_rate (P) | model.predict_next() |
+| 1 | emissions_rate_per_round (I) | schedule.update() |
+| 2.. | exogenous variables | Pre-filled before loop |
+
+Exogenous columns are pre-filled for all time steps before the simulation loop: historical values from data, future values from the `ExogenousSampler`.
+
+BoundFeatures hold a reference to whichever array they are bound to and read from it by column index. No copies — features index directly into the array for both current values and historical lookback.
+
+#### State taxonomy
+
+- **Chain state** (P, I): written by the model and schedule at each step.
+- **Feature state**: internal to each BoundFeature. Accumulators for stateful features (e.g. running product for trailing yield). Not stored in the sample path array.
+- **Exogenous worldstate**: pre-sampled forward paths for external variables. Read-only during the simulation loop.
+- **Response**: model output at each step. Applied to chain state, not persisted separately.
 
 Note: the on-chain smart contracts use the term `inflation` for the emissions rate. We use "emissions" everywhere in our own code and documentation, and only use `inflation` when referring directly to the contract field.
 
-#### Emissions schedule state machine (`emissions_schedule.py`)
+#### Emissions schedule state machine (`emissions_schedule.py`) — IMPLEMENTED
 
 A pluggable interface for the rule that updates the emissions rate each round. This is the component to swap out when exploring alternative emissions schedules.
 
@@ -149,26 +225,12 @@ class EmissionsSchedule(Protocol):
         ...
 ```
 
-The current Livepeer rule is one implementation:
+Two implementations are provided:
 
-```python
-@dataclass
-class SignedStepSchedule:
-    target_participation_rate: float   # e.g. 0.5
-    emissions_change: float            # per-round step size in parts per billion
-    emissions_floor: float             # minimum emissions rate per round
-    emissions_ceiling: float           # maximum emissions rate per round
+- **`SignedStepSchedule`** — the current Livepeer protocol rule: step up or down by a fixed amount each round depending on whether participation is below or above the target. No bounds.
+- **`ClampedSignedStepSchedule`** — same signed-step rule with the addition of a floor and ceiling.
 
-    def update(self, emissions_rate_per_round, participation_rate):
-        step = self.emissions_change * np.sign(
-            self.target_participation_rate - participation_rate
-        )
-        return np.clip(
-            emissions_rate_per_round + step, self.emissions_floor, self.emissions_ceiling
-        )
-```
-
-Vectorized — operates on arrays of shape `(n_paths,)` for all Monte Carlo paths simultaneously.
+Vectorised — operates on arrays of shape `(n_paths,)` for all Monte Carlo paths simultaneously.
 
 #### Exogenous variable sampling (`exogenous.py`)
 
@@ -185,61 +247,87 @@ class ExogenousSampler(Protocol):
         ...
 ```
 
+The Simulator pre-fills the exogenous columns of `sample_path_simulated` from the sampler output before entering the simulation loop.
+
 #### Participation model (`simulation.py`)
 
-Wraps the fitted ridge model, feature transforms, noise, and exogenous sampling into a single object that maps raw state to next-round participation rate. All forward transforms (e.g. logit on participation, log on emissions rate) and the inverse transform back to [0,1] are internal.
+The ParticipationModel is the central object in the pipeline. It:
 
-```python
-class RidgeParticipationModel:
-    def __init__(
-        self,
-        ridge_result,                          # statsmodels fitted result
-        feature_transforms: dict[str, Callable],  # {"participation_rate": logit, "emissions_rate": identity}
-        inverse_transform: Callable,           # e.g. expit, maps model output back to [0,1]
-        noise: NoiseModel,
-        exog_sampler: ExogenousSampler,
-        historical_exog: pl.DataFrame,
-    ): ...
+1. Receives features as column names (strings) or `Feature` objects, resolves column dependencies against the DataFrame, converts to numpy, and binds each to produce BoundFeatures
+2. Owns the ridge model — computes features and target from `sample_path_historic`, calls `fit_ridge`
+3. At each simulation step: calls `step(t)` on each BoundFeature, assembles the feature vector, predicts, inverse-transforms → next P
 
-    def predict_next(self, participation_rate, emissions_rate, step, rng):
-        """Given current state in natural units, return next participation rate in [0,1].
+**Three concrete classes**, differing only in how they handle the target and its inverse:
 
-        `step` is the time index into the pre-sampled exogenous paths (0..horizon-1).
-        """
-        transformed_p = self.feature_transforms["participation_rate"](participation_rate)
-        transformed_i = self.feature_transforms["emissions_rate"](emissions_rate)
-        exog = self.exog_paths[:, step, :]
+- **`RawParticipationModel`** — target is P. Prediction is the next P directly.
+- **`LogitParticipationModel`** — target is logit(P). Prediction: expit(ŷ) → next P.
+- **`DiffLogitParticipationModel`** — target is Δlogit(P). Prediction: expit(logit(P_t) + ŷ) → next P.
 
-        X = np.column_stack([np.ones(len(participation_rate)), transformed_p, transformed_i, exog])
-        y_hat = self.ridge.predict(X) + self.noise(len(participation_rate), rng)
-        return self.inverse_transform(y_hat)
-```
+Each class knows how to:
+1. Compute the target for fitting (identity, logit, or diff-logit of the P column)
+2. Inverse-transform predictions back to [0,1]
+3. Write the result into the sample path array
 
-The `ParticipationModel` Protocol is the interface the simulator depends on:
+The target transform is internal to the model class — not a user-supplied callable, and not part of the Feature system. The model's output is a *response* — the participation response to current conditions. It is not itself state; it is an impulse applied to chain state.
+
+The `ParticipationModel` Protocol is the interface the Simulator depends on:
 
 ```python
 class ParticipationModel(Protocol):
-    def predict_next(self, participation_rate: ndarray, emissions_rate: ndarray,
-                     step: int, rng: Generator) -> ndarray: ...
+    def fit(self) -> None:
+        """Fit ridge model from sample_path_historic.
+
+        Calls evaluate() on each BoundFeature to build the design
+        matrix, computes the target (class-specific transform),
+        calls fit_ridge.
+        """
+        ...
+
+    def prepare(self, sample_path_simulated: NDArray, t0: int) -> None:
+        """Rebind features to simulation array and initialise.
+
+        Calls rebind on each BoundFeature to produce new BoundFeatures
+        on sample_path_simulated, calls evaluate(end=t0, cache=True)
+        on each.
+        """
+        ...
+
+    def predict_next(self, t: int, rng: Generator) -> NDArray:
+        """Predict next participation rate from state at time t.
+
+        Calls step(t) on each BoundFeature, assembles feature vector
+        with intercept, applies ridge predict, adds noise,
+        inverse-transforms.  Returns P(t+1), shape (n_paths,).
+        """
+        ...
 ```
 
-`RidgeParticipationModel` is one implementation. Alternative model types (e.g. mean-reverting OU process, neural net) would implement the same protocol.
-
-Construction in the inference notebook:
+#### Noise models (`simulation.py`)
 
 ```python
-model = RidgeParticipationModel(
-    ridge_result=fitted,
-    feature_transforms={"participation_rate": logit, "emissions_rate": identity},
-    inverse_transform=expit,
-    noise=GaussianNoise(sigma=fitted.resid.std()),
-    exog_sampler=BootstrapSampler(block_size=10),
-    historical_exog=exog_df,
-)
-
-sim = Simulator(schedule=SignedStepSchedule(...), model=model)
-result = sim.run(initial_state, n_paths=1000, horizon=500, rng=default_rng(42))
+class NoiseModel(Protocol):
+    def __call__(self, n: int, rng: Generator) -> NDArray:
+        """Draw n residual noise samples."""
+        ...
 ```
+
+- **`GaussianNoise(sigma)`** — `rng.normal(0, sigma, n)`
+- **`BootstrapNoise(residuals)`** — resample from fitted residuals
+
+#### Simulation loop
+
+```python
+sp = sample_path_simulated
+for t in range(t0, t0 + horizon):
+    sp[:, t + 1, P_COL] = model.predict_next(t, rng)
+    sp[:, t + 1, I_COL] = schedule.update(sp[:, t, I_COL], sp[:, t, P_COL])
+```
+
+Each step:
+1. `model.predict_next(t, rng)`: calls `step(t)` on each BoundFeature, assembles feature vector with intercept, applies ridge `.predict()`, adds noise, inverse-transforms → P(t+1).
+2. `schedule.update(I(t), P(t))` → I(t+1).
+
+Both read from time t and write to time t+1. The operations are independent — neither reads the other's output at t+1.
 
 #### Simulator (`simulation.py`)
 
@@ -249,22 +337,45 @@ class Simulator:
     schedule: EmissionsSchedule
     model: ParticipationModel
 
-    def run(self, initial_state: SimulationState, n_paths: int, horizon: int,
+    def run(self, initial_state: SimulationState,
+            n_paths: int, horizon: int,
+            exog_sampler: ExogenousSampler,
             rng: Generator) -> SimulationResult:
-        """Run Monte Carlo simulation.
-
-        Internally calls model.prepare(n_paths, horizon, rng) to pre-sample
-        exogenous paths before entering the loop. The caller does not need to
-        manage this.
-        """
+        """Run Monte Carlo simulation."""
         ...
 ```
 
+The Simulator:
+1. Queries the model for `lookback` (max Feature lookback across all features)
+2. Allocates `sample_path_simulated` with shape `(n_paths, lookback + horizon + 1, n_cols)`
+3. Copies the tail of `sample_path_historic` into the first `lookback` rows, broadcast to all paths
+4. Pre-fills exogenous columns using the `ExogenousSampler`
+5. Calls `model.prepare(sample_path_simulated, t0=lookback)` — rebinds Features, initialises accumulators
+6. Runs the simulation loop
+7. Returns `SimulationResult` (slicing out the history prefix)
+
+Construction in the inference notebook:
+
 ```python
-@dataclass
-class SimulationState:
-    participation_rate: float       # last observed, in [0,1]
-    emissions_rate_per_round: float # last observed, in parts per billion
+model = LogitParticipationModel(
+    features=[
+        "logit_participation",   # pre-computed in data prep
+        "inflation_annual",      # pre-computed in data prep
+        "fear_greed",
+    ],
+    df=round_df,
+    alpha=0.1,
+    noise=GaussianNoise(sigma=0.01),
+)
+model.fit()
+
+sim = Simulator(schedule=SignedStepSchedule(...), model=model)
+result = sim.run(
+    initial_state=SimulationState(participation_rate=0.45, emissions_rate_per_round=38),
+    n_paths=1000, horizon=500,
+    exog_sampler=BootstrapSampler(block_size=10),
+    rng=default_rng(42),
+)
 ```
 
 **Contract out:** `SimulationResult` with `participation_rate_paths` in natural [0,1] units and `emissions_rate_per_round_paths` in parts per billion. Both arrays of shape `(n_paths, horizon+1)`.
@@ -354,11 +465,11 @@ The current `ForecastTool_RoundBasis.py` tries to be an interactive playground a
 
 ### 1. Diagnostics / feature selection notebook
 
-Exploratory. Iterate over candidate configurations (feature sets, transforms, differencing, alpha values) and compare them side-by-side. For each combination: fit on a training window, evaluate on held-out data, report AIC/RMSE/coefficient stability. Output is a comparison table. Train/test splitting lives here, not in the library.
+Exploratory. Iterate over candidate configurations (feature sets, transforms, differencing, alpha values) and compare them side-by-side. For each combination: fit on a training window, evaluate on held-out data, report AIC/RMSE/coefficient stability. Output is a comparison table. Train/test splitting lives here, not in the library. Can use `fit_ridge` directly or construct `ParticipationModel` instances to compare model types.
 
 ### 2. Inference / forecasting notebook
 
-Takes a fixed configuration as input: feature set (list of `pl.Expr`), alpha, noise model, protocol params, risk objectives. Fits on all available data, runs simulation, evaluates admissibility. This is the "production" notebook — no exploratory UI, just a clear pipeline from config to results.
+Takes a fixed configuration as input: feature specs, model class (Raw/Logit/DiffLogit), alpha, noise model, protocol params, risk objectives. Fits on all available data, runs simulation, evaluates admissibility. This is the "production" notebook — no exploratory UI, just a clear pipeline from config to results.
 
 ### 3. Historical exploration notebook
 
@@ -367,37 +478,40 @@ Takes a fixed configuration as input: feature set (list of `pl.Expr`), alpha, no
 ## What's NOT Included
 
 - **Loss function** (issue #8 breach-count loss) — deferred
+- **Feature convenience factories** (e.g. `lag("col", n)`, combinators) — future iteration once patterns stabilise
 - **Plotting/visualization** — stays in notebooks
-- **Pandas support** — Polars only
+- **Pandas support** — Polars for data loading, numpy for simulation
 - **Daily-resolution pipeline** — November notebook is deprecated
 
 ## Dependency Changes to `pyproject.toml`
 
-Library core deps: `polars`, `numpy`, `statsmodels`, `requests`
+Library core deps: `polars`, `numpy`
 
-Optional: `web3` (for on-chain fetching in `data.py`)
+Optional: `requests` (for Etherscan API in `time.py`), `web3` (for on-chain fetching in `data.py`)
 
 Move to dev/notebook deps: `marimo`, `altair`, `matplotlib`, `arrow`, `pytz`, `pyzmq`
 
-Remove: `pandas` (replaced by `polars` throughout)
+Remove: `pandas` (replaced by `polars` throughout), `statsmodels` (replaced by closed-form solver in `model.py`)
 
 ## Implementation Order
 
-1. `constants.py` + `types.py` — foundational, no deps
-2. `time.py` — estimated round↔datetime conversion, real timestamp→block lookup
-3. `features.py` — expression plugins, presets, design matrix assembly
-4. `data.py` — daily data loading and round reindexing (depends on `time.py`)
-5. `model.py` — ridge fitting via statsmodels
-6. `emissions_schedule.py` — `EmissionsSchedule` protocol + `SignedStepSchedule`
-7. `exogenous.py` — `ExogenousSampler` protocol + `BootstrapSampler`, `AR1Sampler`
-8. `simulation.py` — `NoiseModel`, `ParticipationModel`, `RidgeParticipationModel`, `Simulator`
-9. `derived.py` — total supply, yield, dilution path computations
-10. Tests for each module
-11. Build the inference and diagnostics notebooks using the library
+1. `constants.py` + `types.py` — foundational, no deps — DONE
+2. `time.py` — estimated round↔datetime conversion, real timestamp→block lookup — DONE
+3. `features.py` — numpy transforms (logit, expit, annualise_ppb), build_design_matrix — DONE (Feature protocol to be added)
+4. `data.py` — daily data loading and round reindexing — DONE
+5. `model.py` — ridge fitting, closed-form solver — DONE
+6. `emissions_schedule.py` — `EmissionsSchedule` protocol + `SignedStepSchedule`, `ClampedSignedStepSchedule` — DONE
+7. `types.py` update — add `Feature` and `BoundFeature` protocols, revise `ParticipationModel` protocol (fit/prepare/predict_next)
+8. `features.py` update — add `BoundColumnFeature` (internal, identity transform on column data)
+9. `exogenous.py` — `ExogenousSampler` protocol + `BootstrapSampler`, `AR1Sampler`
+10. `simulation.py` — `NoiseModel` implementations, three `ParticipationModel` classes, `Simulator` with Ω management
+11. `derived.py` — total supply, yield, dilution path computations
+12. Tests for each new/updated module
+13. Build the inference and diagnostics notebooks using the library
 
 ## Verification
 
 - Unit tests for each module using pytest (in `tests/` directory)
-- Key things to test: forward/inverse transform roundtrip, design matrix shape and column names, emissions schedule boundary cases (clipping at floor/ceiling), simulation reproducibility with fixed seed, derived quantity computations against hand-calculated examples
+- Key things to test: forward/inverse transform roundtrip, BoundFeature evaluate/step consistency, BoundFeature rebind, design matrix shape, emissions schedule boundary cases (clipping at floor/ceiling), simulation reproducibility with fixed seed, derived quantity computations against hand-calculated examples
 - Integration test: run full pipeline (load sample data → features → fit → simulate → derive) and check output types and shapes
 - Regression test: compare library output against current notebook output for a known parameter set to ensure extraction didn't change behaviour
