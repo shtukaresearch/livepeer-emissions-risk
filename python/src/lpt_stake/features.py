@@ -1,23 +1,57 @@
 """Feature engineering utilities for the lpt_stake library.
 
-Provides Polars expression plugins (composable transforms) and a
-design-matrix assembly function.
+Provides:
 
-Expression plugins take and return ``pl.Expr``, so they compose with
-``.pipe()``.  These are used during data preparation in notebooks.
+- Numpy transforms: :func:`np_logit`, :func:`np_expit`.
+- Polars expression plugins: :func:`logit`, :func:`expit`,
+  :func:`annualise_ppb`.
+- Design-matrix assembly: :func:`build_design_matrix`.
 """
 
 from __future__ import annotations
 
 import logging
 
+import numpy as np
 import polars as pl
+from numpy.typing import NDArray
 
 logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Expression plugins
+# Numpy transforms
+# ---------------------------------------------------------------------------
+
+
+def np_logit(x: NDArray[np.floating]) -> NDArray[np.floating]:
+    """Log-odds transform on numpy arrays: ``log(x / (1 - x))``.
+
+    Maps (0, 1) → (-∞, +∞).  The inverse is :func:`np_expit`.
+
+    Parameters
+    ----------
+    x
+        Array with values in (0, 1).
+    """
+    return np.log(x / (1.0 - x))
+
+
+def np_expit(x: NDArray[np.floating]) -> NDArray[np.floating]:
+    """Logistic sigmoid on numpy arrays: ``1 / (1 + exp(-x))``.
+
+    Maps (-∞, +∞) → (0, 1).  The inverse is :func:`np_logit`.
+
+    Parameters
+    ----------
+    x
+        Array with real-valued inputs.
+    """
+    return 1.0 / (1.0 + np.exp(-x))
+
+
+# ---------------------------------------------------------------------------
+# Polars expression plugins
 # ---------------------------------------------------------------------------
 
 
