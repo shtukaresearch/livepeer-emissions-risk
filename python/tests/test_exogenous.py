@@ -91,7 +91,6 @@ class TestAR1SamplerStartValue:
     """First sampled value should continue from last historical value."""
 
     def test_first_step_is_last_historical(self):
-        rng = np.random.default_rng(0)
         # Constant series => AR(1) with phi~1, sigma~0
         # First value should be very close to the last historical value
         hist = np.full((100, 1), 5.0)

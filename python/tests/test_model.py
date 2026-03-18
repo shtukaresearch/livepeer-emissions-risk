@@ -5,7 +5,7 @@ import polars as pl
 import pytest
 
 from lpt_stake.features import build_design_matrix
-from lpt_stake.model import RidgeResult, fit_ridge
+from lpt_stake.model import fit_ridge
 
 
 # ---------------------------------------------------------------------------

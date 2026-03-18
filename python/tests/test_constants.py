@@ -5,7 +5,6 @@ require ``ARB_RPC_URL`` and ``ETHERSCAN_API_KEY`` environment variables and
 are skipped when those are not set.
 """
 
-import json
 import os
 from datetime import timezone
 

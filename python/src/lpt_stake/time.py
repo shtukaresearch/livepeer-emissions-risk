@@ -13,7 +13,7 @@ for the actual Arbitrum block number at a given wall-clock time.  This is used
 by the data-fetching pipeline and is authoritative, not an estimate.
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 
 import requests
 
