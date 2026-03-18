@@ -9,7 +9,11 @@ import os
 from datetime import timezone
 
 import pytest
-import requests
+
+try:
+    import requests
+except ModuleNotFoundError:
+    requests = None
 
 from lpt_stake.constants import (
     ETH_SLOTS_PER_ROUND,
@@ -28,10 +32,12 @@ _ARB_RPC_URL = os.environ.get("ARB_RPC_URL")
 _ETHERSCAN_API_KEY = os.environ.get("ETHERSCAN_API_KEY")
 
 requires_rpc = pytest.mark.skipif(
-    not _ARB_RPC_URL, reason="ARB_RPC_URL not set"
+    not _ARB_RPC_URL or requests is None,
+    reason="ARB_RPC_URL not set or requests not installed",
 )
 requires_etherscan = pytest.mark.skipif(
-    not _ETHERSCAN_API_KEY, reason="ETHERSCAN_API_KEY not set"
+    not _ETHERSCAN_API_KEY or requests is None,
+    reason="ETHERSCAN_API_KEY not set or requests not installed",
 )
 
 _ROUNDS_MANAGER = "0xdd6f56DcC28D3F5f27084381fE8Df634985cc39f"

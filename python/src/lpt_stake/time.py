@@ -15,8 +15,6 @@ by the data-fetching pipeline and is authoritative, not an estimate.
 
 from datetime import datetime, timedelta
 
-import requests
-
 from lpt_stake.constants import (
     REFERENCE_DATETIME,
     REFERENCE_ROUND,
@@ -156,6 +154,8 @@ def fetch_block_at_timestamp(
     ValueError
         If *timestamp* is naive or the API returns an error.
     """
+    import requests
+
     if timestamp.tzinfo is None:
         raise ValueError("timestamp must be timezone-aware")
 

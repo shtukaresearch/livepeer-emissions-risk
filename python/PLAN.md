@@ -20,7 +20,7 @@ src/lpt_stake/
     emissions_schedule.py    # EmissionsSchedule protocol + SignedStepSchedule, ClampedSignedStepSchedule
     exogenous.py             # ExogenousSampler protocol + BootstrapSampler, AR1Sampler
     simulation.py            # ParticipationModel classes, ChainStateSimulation, ParticipationSimulation, Simulator, NoiseModel
-    derived.py               # Post-simulation derived quantities (total supply, yield, dilution)
+    util.py                  # Post-simulation utilities (total supply computation)
 ```
 
 ## Key Types
@@ -406,19 +406,15 @@ class NoiseModel(Protocol):
 
 Both implement the `ExogenousSampler` protocol. No changes needed.
 
-### Stage 5: Derived quantities (`derived.py`)
+### Stage 5: Utilities (`util.py`)
 
-Takes a `SimulationResult` (participation rate and emissions rate paths in natural units) and computes quantities that are derived from the simulated paths but do not feed back into the simulation loop.
+Post-simulation utility functions.  In principle total supply tracking belongs in `ChainStateSimulation`; for now it is a standalone function.
 
-- `compute_total_supply_paths(initial_supply: float, emissions_rate_paths: ndarray) -> ndarray` — cumulative product: `supply[t+1] = supply[t] * (1 + emissions_rate[t])`. Shape `(n_paths, horizon+1)`.
-- `compute_yield_paths(emissions_rate_paths: ndarray, participation_rate_paths: ndarray) -> ndarray` — `yield[t] = emissions_rate[t] / participation_rate[t]` each round, compounded over the path. Not annualised.
-- `compute_dilution_paths(emissions_rate_paths: ndarray) -> ndarray` — `dilution[t] = 1 - 1/(1 + emissions_rate[t])` per round.
+- `compute_total_supply_paths(initial_supply: float, emissions_rate_paths: ndarray) -> ndarray` — cumulative product: `supply[t+1] = supply[t] * (1 + emissions_rate[t] / 1e9)`. Shape `(n_paths, horizon+1)`. Emissions rate is in parts per billion, matching `SimulationResult`.
 
-These are used by the notebook for:
-- Visualisation (fan charts of total supply, yield, dilution over time)
-- Admissibility evaluation — computing quantiles and checking inequalities against thresholds
+Other derived quantities (yield, dilution, etc.) are left to notebooks — they are one-liners in numpy and different analyses may define them differently.
 
-Admissibility itself is not formalised in the library. It's a predicate over the simulation results: the notebook computes statistics (quantiles, exceedance probabilities — one-liners in numpy), evaluates inequalities, and decides pass/fail. Different notebooks or analyses may define different admissibility criteria.
+Admissibility is not formalised in the library. It is a predicate over the simulation results: the notebook computes statistics (quantiles, exceedance probabilities), evaluates inequalities, and decides pass/fail.
 
 ## Constants (`constants.py`)
 
@@ -529,11 +525,11 @@ Remove: `pandas` (replaced by `polars` throughout), `statsmodels` (replaced by c
 6. `emissions_schedule.py` — `EmissionsSchedule` protocol + `SignedStepSchedule`, `ClampedSignedStepSchedule` — DONE
 7. `exogenous.py` — `ExogenousSampler` protocol + `BootstrapSampler`, `AR1Sampler` — DONE
 8. `simulation.py` — `NoiseModel` implementations (`GaussianNoise`, `BootstrapNoise`) — DONE
-9. `types.py` + `features.py` revision — replace `BoundFeature`/`BoundColumnFeature`/`ParticipationModel` protocol with new `Feature`/`FeatureSimulation` protocols. Delete `BoundColumnFeature`.
-10. `simulation.py` — `ParticipationModel` classes (Raw, Logit, DiffLogit) + tests
-11. `simulation.py` — `ChainStateSimulation`, `ParticipationSimulation`, `Simulator` + tests
-12. `derived.py` — total supply, yield, dilution path computations + tests
-13. `__init__.py` + `pyproject.toml` — public API exports, dependency cleanup
+9. `types.py` + `features.py` revision — replace `BoundFeature`/`BoundColumnFeature`/`ParticipationModel` protocol with new `Feature`/`FeatureSimulation` protocols. Delete `BoundColumnFeature`. — DONE
+10. `simulation.py` — `ParticipationModel` classes (Raw, Logit, DiffLogit) + tests — DONE
+11. `simulation.py` — `ChainStateSimulation`, `ParticipationSimulation`, `Simulator` + tests — DONE
+12. `util.py` — `compute_total_supply_paths` + tests — DONE
+13. `__init__.py` + `pyproject.toml` — public API exports, dependency cleanup — DONE
 14. Build the inference and diagnostics notebooks using the library
 
 ## Verification
