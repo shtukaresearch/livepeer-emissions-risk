@@ -1,28 +1,17 @@
 """Feature engineering utilities for the lpt_stake library.
 
-Provides Polars expression plugins (composable transforms), a design-matrix
-assembly function, and the ``BoundColumnFeature`` class for the simulation
-pipeline.
+Provides Polars expression plugins (composable transforms) and a
+design-matrix assembly function.
 
 Expression plugins take and return ``pl.Expr``, so they compose with
 ``.pipe()``.  These are used during data preparation in notebooks.
-
-``BoundColumnFeature`` is an internal class used by
-``ParticipationModel`` to wrap a column of numpy data for vectorised
-(``evaluate``) and incremental (``step``) access during fitting and
-simulation.
 """
 
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
 
-import numpy as np
 import polars as pl
-
-if TYPE_CHECKING:
-    from numpy.typing import NDArray
 
 logger = logging.getLogger(__name__)
 
@@ -79,102 +68,6 @@ def annualise_ppb(expr: pl.Expr, rounds_per_year: float) -> pl.Expr:
         Number of rounds per year (see ``constants.ROUNDS_PER_YEAR``).
     """
     return (1 + expr / 1e9).pow(rounds_per_year) - 1
-
-
-# ---------------------------------------------------------------------------
-# BoundColumnFeature
-# ---------------------------------------------------------------------------
-
-
-class BoundColumnFeature:
-    """A stateless feature bound to a column of numpy data.
-
-    Wraps a 1-D array (fitting, shape ``(T,)``) or 2-D array (simulation,
-    shape ``(n_paths, T)``) and provides vectorised and incremental access.
-
-    This is an internal class created by ``ParticipationModel`` when it
-    resolves a column-name feature against the input DataFrame.  Users do
-    not construct this directly.
-
-    Parameters
-    ----------
-    data
-        Column data.  Shape ``(T,)`` for fitting or ``(n_paths, T)``
-        for simulation.
-    transform
-        Optional pointwise numpy transform applied to the data on read.
-        Defaults to identity.  Provided so that ``ParticipationModel``
-        can attach a transform when needed (e.g. for future convenience
-        factories like ``lag``).
-    """
-
-    def __init__(
-        self,
-        data: NDArray[np.floating],
-        transform: object | None = None,
-    ) -> None:
-        self._data = data
-        self._transform = transform
-
-    # -- helpers ----------------------------------------------------------
-
-    def _apply(self, x: NDArray[np.floating]) -> NDArray[np.floating]:
-        """Apply the transform if one was provided."""
-        if self._transform is None:
-            return x
-        return self._transform(x)
-
-    # -- BoundFeature interface -------------------------------------------
-
-    def evaluate(
-        self,
-        end: int | None = None,
-        cache: bool = False,  # noqa: ARG002 — stateless, nothing to cache
-    ) -> NDArray[np.floating]:
-        """Compute feature values over the data, up to index *end*.
-
-        Parameters
-        ----------
-        end
-            Slice the time axis to ``[:end]``.  ``None`` means the full
-            extent.
-        cache
-            Ignored for stateless features.  Accepted so that the
-            ``BoundFeature`` protocol can be satisfied uniformly.
-
-        Returns
-        -------
-        NDArray
-            Shape ``(T,)`` or ``(end,)`` for 1-D data;
-            ``(n_paths, T)`` or ``(n_paths, end)`` for 2-D data.
-        """
-        if end is None:
-            return self._apply(self._data)
-        return self._apply(self._data[..., :end])
-
-    def step(self, t: int) -> NDArray[np.floating]:
-        """Feature value at time *t*.
-
-        Returns
-        -------
-        NDArray
-            Scalar (0-d) for 1-D data, shape ``(n_paths,)`` for 2-D data.
-        """
-        return self._apply(self._data[..., t])
-
-    def rebind(self, data: NDArray[np.floating]) -> BoundColumnFeature:
-        """Create a new ``BoundColumnFeature`` on *data*, same transform.
-
-        Parameters
-        ----------
-        data
-            New column data array.
-
-        Returns
-        -------
-        BoundColumnFeature
-        """
-        return BoundColumnFeature(data, transform=self._transform)
 
 
 # ---------------------------------------------------------------------------

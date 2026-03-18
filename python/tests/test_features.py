@@ -2,13 +2,11 @@
 
 import math
 
-import numpy as np
 import polars as pl
 import pytest
 
 from lpt_stake.constants import ROUNDS_PER_YEAR
 from lpt_stake.features import (
-    BoundColumnFeature,
     annualise_ppb,
     build_design_matrix,
     expit,
@@ -258,106 +256,3 @@ class TestBuildDesignMatrix:
             features=[pl.col("participation").diff()],
         )
         assert result.null_count().row(0) == tuple(0 for _ in result.columns)
-
-
-# ---------------------------------------------------------------------------
-# BoundColumnFeature
-# ---------------------------------------------------------------------------
-
-
-class TestBoundColumnFeatureEvaluate:
-    """Test evaluate() on BoundColumnFeature."""
-
-    def test_1d_full(self):
-        data = np.array([0.3, 0.5, 0.7, 0.4, 0.6])
-        bound = BoundColumnFeature(data)
-        result = bound.evaluate()
-        assert result.shape == (5,)
-        np.testing.assert_array_equal(result, data)
-
-    def test_2d_full(self):
-        data = np.random.default_rng(42).random((10, 20))
-        bound = BoundColumnFeature(data)
-        result = bound.evaluate()
-        assert result.shape == (10, 20)
-        np.testing.assert_array_equal(result, data)
-
-    def test_1d_with_end(self):
-        data = np.array([0.3, 0.5, 0.7, 0.4, 0.6])
-        bound = BoundColumnFeature(data)
-        result = bound.evaluate(end=3)
-        assert result.shape == (3,)
-        np.testing.assert_array_equal(result, data[:3])
-
-    def test_2d_with_end(self):
-        data = np.random.default_rng(42).random((10, 20))
-        bound = BoundColumnFeature(data)
-        result = bound.evaluate(end=5)
-        assert result.shape == (10, 5)
-        np.testing.assert_array_equal(result, data[:, :5])
-
-    def test_cache_flag_accepted(self):
-        """cache=True should not raise for stateless features."""
-        data = np.array([0.3, 0.5, 0.7])
-        bound = BoundColumnFeature(data)
-        result = bound.evaluate(end=2, cache=True)
-        np.testing.assert_array_equal(result, data[:2])
-
-
-class TestBoundColumnFeatureStep:
-    """Test step(t) on BoundColumnFeature."""
-
-    def test_1d_returns_scalar(self):
-        data = np.array([0.3, 0.5, 0.7])
-        bound = BoundColumnFeature(data)
-        result = bound.step(1)
-        assert np.isscalar(result) or result.ndim == 0
-        assert float(result) == pytest.approx(0.5)
-
-    def test_2d_returns_n_paths(self):
-        data = np.ones((10, 5)) * 0.5
-        bound = BoundColumnFeature(data)
-        assert bound.step(2).shape == (10,)
-
-    def test_2d_correct_values(self):
-        data = np.array([[0.3, 0.5, 0.7], [0.4, 0.6, 0.8]])
-        bound = BoundColumnFeature(data)
-        np.testing.assert_allclose(bound.step(1), [0.5, 0.6])
-
-
-class TestBoundColumnFeatureRebind:
-    """Test rebinding to a different data array."""
-
-    def test_rebind_reads_from_new_array(self):
-        bound = BoundColumnFeature(np.array([0.3, 0.5, 0.7]))
-        rebound = bound.rebind(np.array([0.1, 0.2, 0.3]))
-        assert float(rebound.step(0)) == pytest.approx(0.1)
-
-    def test_original_unchanged(self):
-        bound = BoundColumnFeature(np.array([0.3, 0.5, 0.7]))
-        bound.rebind(np.array([0.1, 0.2, 0.3]))
-        assert float(bound.step(0)) == pytest.approx(0.3)
-
-    def test_rebind_1d_to_2d(self):
-        """Rebind from fitting (1D) to simulation (2D: n_paths x T)."""
-        bound = BoundColumnFeature(np.array([0.3, 0.5, 0.7]))
-        rebound = bound.rebind(np.array([[0.3, 0.5, 0.7], [0.4, 0.6, 0.8]]))
-        np.testing.assert_allclose(rebound.step(1), [0.5, 0.6])
-
-
-class TestEvaluateStepConsistency:
-    """evaluate()[..., t] must equal step(t) for all t."""
-
-    def test_1d(self):
-        data = np.array([0.3, 0.5, 0.7, 0.4, 0.6])
-        bound = BoundColumnFeature(data)
-        full = bound.evaluate()
-        for t in range(len(data)):
-            assert float(bound.step(t)) == pytest.approx(float(full[t]))
-
-    def test_2d(self):
-        data = np.random.default_rng(42).random((5, 10))
-        bound = BoundColumnFeature(data)
-        full = bound.evaluate()
-        for t in range(data.shape[1]):
-            np.testing.assert_allclose(bound.step(t), full[:, t])

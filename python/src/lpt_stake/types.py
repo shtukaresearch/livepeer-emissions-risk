@@ -125,146 +125,89 @@ class EmissionsSchedule(Protocol):
 
 
 class Feature(Protocol):
-    """An unbound feature with column dependencies.
+    """A stateful feature with column dependencies.
 
-    Stateful features (e.g. trailing yield) implement this protocol and
-    carry their column dependencies as column name strings.  For simple
-    column features (strings in the model constructor), the model wraps
-    them internally in a ``BoundColumnFeature`` without going through
-    ``Feature``.
+    Stateful features (e.g. trailing yield) implement this protocol.
+    They carry their column dependencies as column name strings and
+    provide two entry points:
+
+    - ``evaluate(df)`` for fitting: stateless evaluation over a full
+      DataFrame.
+    - ``make_simulation(historical, n_paths)`` for simulation: construct
+      a ``FeatureSimulation`` initialized from historical data.
+
+    For simple column features (strings in the model constructor), the
+    model handles both paths directly — no ``Feature`` object needed.
     """
 
-    def bind(self, data: NDArray[np.floating]) -> BoundFeature:
-        """Bind to column data.
+    columns: list[str]
+
+    def evaluate(self, df: pl.DataFrame) -> NDArray[np.floating]:
+        """Evaluate feature over a full DataFrame.
+
+        Used by ``ParticipationModel.fit()`` to build the design matrix.
 
         Parameters
         ----------
-        data
-            Column data sliced by the caller: shape ``(T,)`` for fitting,
-            ``(n_paths, T)`` for simulation.  For multi-column features,
-            shape ``(T, k)`` or ``(n_paths, T, k)``.
-
-        Returns
-        -------
-        BoundFeature
-        """
-        ...
-
-
-class BoundFeature(Protocol):
-    """A feature bound to a specific data array.
-
-    Provides vectorised access (``evaluate``) and incremental access
-    (``step``).  For stateless features, ``step(t)`` is equivalent to
-    ``evaluate()[..., t]``.  For stateful features, ``evaluate`` with
-    ``cache=True`` prepares internal accumulators for subsequent
-    ``step`` calls.
-    """
-
-    def evaluate(
-        self,
-        end: int | None = ...,
-        cache: bool = ...,
-    ) -> NDArray[np.floating]:
-        """Compute feature values over the data, up to index *end*.
-
-        Parameters
-        ----------
-        end
-            Slice the time axis to ``[:end]``.  ``None`` means the full
-            extent.
-        cache
-            If ``True``, save intermediate state for subsequent ``step``
-            calls.  Ignored by stateless features.
+        df
+            Round-indexed DataFrame containing the columns listed in
+            ``self.columns``.
 
         Returns
         -------
         NDArray
-            Shape ``(T,)`` or ``(end,)`` for 1-D data;
-            ``(n_paths, T)`` or ``(n_paths, end)`` for 2-D data.
+            Feature values, shape ``(T,)``.
         """
         ...
 
-    def step(self, t: int) -> NDArray[np.floating]:
-        """Feature value at time *t* (incremental).
+    def make_simulation(
+        self,
+        historical: pl.DataFrame,
+        n_paths: int,
+    ) -> FeatureSimulation:
+        """Construct a ``FeatureSimulation`` initialized from history.
+
+        Parameters
+        ----------
+        historical
+            Historical DataFrame for cache initialization.
+        n_paths
+            Number of Monte Carlo paths.
 
         Returns
         -------
-        NDArray
-            Scalar for 1-D data, shape ``(n_paths,)`` for 2-D data.
-        """
-        ...
-
-    def rebind(self, data: NDArray[np.floating]) -> BoundFeature:
-        """Create a new ``BoundFeature`` on *data*, same transform.
-
-        Returns
-        -------
-        BoundFeature
+        FeatureSimulation
         """
         ...
 
 
-class ParticipationModel(Protocol):
-    """Central simulation object.  Owns features, fitting, and prediction.
+class FeatureSimulation(Protocol):
+    """Stateful feature accumulator for the simulation loop.
 
-    The three concrete implementations (``RawParticipationModel``,
-    ``LogitParticipationModel``, ``DiffLogitParticipationModel``) differ
-    only in how they transform the target and inverse-transform predictions.
+    Initialized from historical data to set up cache shape and fill
+    lookback.  At each step, receives fresh observations as arguments
+    and returns the feature value.  Does not hold a reference to any
+    domain array.
+
+    For simple column features, this is a pass-through that returns
+    the observation unchanged.  For stateful features (e.g. trailing
+    yield), this maintains a rolling accumulator.
     """
 
-    def fit(self) -> None:
-        """Fit ridge model from ``sample_path_historic``.
-
-        Calls ``evaluate()`` on each ``BoundFeature`` to build the design
-        matrix, computes the target (class-specific transform), calls
-        ``fit_ridge``.
-        """
-        ...
-
-    def prepare(
-        self,
-        sample_path_simulated: NDArray[np.floating],
-        t0: int,
-    ) -> None:
-        """Rebind features to simulation array and initialise.
-
-        Calls ``rebind`` on each ``BoundFeature`` to produce new
-        ``BoundFeature`` instances on *sample_path_simulated*, then calls
-        ``evaluate(end=t0, cache=True)`` on each.
+    def step(self, observation: NDArray[np.floating]) -> NDArray[np.floating]:
+        """Receive fresh observation, update cache, return feature value.
 
         Parameters
         ----------
-        sample_path_simulated
-            Simulation array, shape ``(n_paths, lookback + horizon + 1,
-            n_cols)``.
-        t0
-            Index at which simulation starts (i.e. the lookback length).
-        """
-        ...
-
-    def predict_next(
-        self,
-        t: int,
-        rng: Generator,
-    ) -> NDArray[np.floating]:
-        """Predict next participation rate from state at time *t*.
-
-        Calls ``step(t)`` on each ``BoundFeature``, assembles feature
-        vector with intercept, applies ridge predict, adds noise,
-        inverse-transforms.
-
-        Parameters
-        ----------
-        t
-            Current time index into ``sample_path_simulated``.
-        rng
-            Numpy random generator for noise sampling.
+        observation
+            Current-step values for this feature's input columns.
+            Shape ``(n_paths,)`` for single-column,
+            ``(n_paths, k)`` for multi-column.
 
         Returns
         -------
         NDArray
-            Predicted participation rate in [0, 1], shape ``(n_paths,)``.
+            Feature value, shape ``(n_paths,)``.
         """
         ...
 
