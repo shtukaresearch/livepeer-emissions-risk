@@ -20,6 +20,15 @@ if TYPE_CHECKING:
     import polars as pl
 
 # ---------------------------------------------------------------------------
+# Exceptions
+# ---------------------------------------------------------------------------
+
+
+class SimulationOverrunError(Exception):
+    """Raised when a simulation object is stepped past its allocated horizon."""
+
+
+# ---------------------------------------------------------------------------
 # Dataclasses — concrete data containers
 # ---------------------------------------------------------------------------
 
