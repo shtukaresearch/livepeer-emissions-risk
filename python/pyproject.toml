@@ -10,6 +10,7 @@ dependencies = [
     "marimo>=0.17.7",
     "matplotlib>=3.10.1",
     "pandas>=2.2.3",
+    "pyarrow>=20.0.0",
     "polars>=1.26.0",
     "pytz>=2025.1",
     "pyzmq>=27.1.0",
@@ -19,11 +20,20 @@ dependencies = [
     "statsmodels>=0.14.4",
     "urllib3>=2.3.0",
     "web3>=7.9.0",
+    "yfinance>=0.2.65",
 ]
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[project.scripts]
+lpt-build-metrics = "lpt_stake.cli.build_metrics:main"
+lpt-generate-launchd-plist = "lpt_stake.cli.generate_launchd_plist:main"
+lpt-refresh-fee-data = "lpt_stake.cli.fetch_fee_data:main"
+lpt-refresh-live-data = "lpt_stake.cli.refresh_live_data:main"
+lpt-refresh-market-data = "lpt_stake.cli.fetch_market_data:main"
+lpt-refresh-work-data = "lpt_stake.cli.fetch_work_data:main"
 
 [dependency-groups]
 dev = [
