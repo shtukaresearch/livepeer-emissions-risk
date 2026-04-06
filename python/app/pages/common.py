@@ -303,10 +303,11 @@ def holder_impact_block(df: pd.DataFrame, holder_lpt: float = 10_000) -> mo.Html
     lost_usd = lost_lpt * latest["lpt_price_usd"] if pd.notna(latest["lpt_price_usd"]) else float("nan")
 
     return info_panel(
-        "Passive Holder Impact",
+        "Passive (Unbonded) Holder Impact",
         [
             f"A passive holder with {holder_lpt:,.0f} LPT would lose about {fmt_number(lost_lpt, 'lpt')} of ownership over this range.",
             f"At the ending token price, that is roughly {fmt_number(lost_usd, 'usd')}.",
+            "This impact falls only on unbonded holders. Bonded holders receive emissions proportional to their stake and are net beneficiaries, not payers.",
         ],
         tone="accent",
     )
@@ -315,36 +316,44 @@ def holder_impact_block(df: pd.DataFrame, holder_lpt: float = 10_000) -> mo.Html
 def cost_translation_row(df: pd.DataFrame) -> mo.Html:
     avg_market_cap = pd.to_numeric(df["market_cap_usd"], errors="coerce").mean()
     total_fees = _numeric_series(df, "fees_usd").sum(min_count=1)
+    total_tbc = pd.to_numeric(df["tbc_cost_usd"], errors="coerce").sum(min_count=1)
     burden_vs_market_cap = (
-        pd.to_numeric(df["tbc_cost_usd"], errors="coerce").sum(min_count=1) / avg_market_cap
+        total_tbc / avg_market_cap
         if pd.notna(avg_market_cap) and avg_market_cap
         else float("nan")
     )
     burden_vs_fees = (
-        pd.to_numeric(df["tbc_cost_usd"], errors="coerce").sum(min_count=1) / total_fees
+        total_tbc / total_fees
         if pd.notna(total_fees) and total_fees
         else float("nan")
     )
     avg_daily_cost = pd.to_numeric(df["tbc_cost_usd"], errors="coerce").mean()
+    total_net_burden = _numeric_series(df, "net_burden_usd").sum(min_count=1)
 
     return metric_grid(
         [
             (
-                "Cost as % of Avg Market Cap",
+                "Gross Cost as % of Avg Market Cap",
                 fmt_number(burden_vs_market_cap, "pct"),
-                "Burden normalized by average network value.",
+                "Protocol expenditure (gross issuance) normalized by average network value.",
                 None,
             ),
             (
-                "Cost as % of Fees",
+                "Gross Cost as % of Fees",
                 fmt_number(burden_vs_fees, "pct"),
-                "Burden normalized by protocol revenue.",
+                "Protocol expenditure normalized by protocol revenue.",
                 None,
             ),
             (
-                "Average Daily Cost",
+                "Average Daily Gross Cost",
                 fmt_number(avg_daily_cost, "usd"),
-                "Average issuance burden per day across the selected range.",
+                "Average gross issuance burden per day across the selected range.",
+                None,
+            ),
+            (
+                "Net Passive Burden",
+                fmt_number(total_net_burden, "usd"),
+                "Gross TBC adjusted for participation rate — the actual dollar transfer from unbonded to bonded holders.",
                 None,
             ),
         ]

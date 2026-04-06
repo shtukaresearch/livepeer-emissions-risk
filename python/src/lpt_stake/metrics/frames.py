@@ -14,8 +14,10 @@ def expense_frame(df: pd.DataFrame) -> pd.DataFrame:
             "issuance_lpt",
             "lpt_price_usd",
             "tbc_cost_usd",
+            "net_burden_usd",
             "market_cap_usd",
             "tbc_pct_market_cap",
+            "net_burden_pct_market_cap",
             "tbc_pct_fees",
         ]
     ].copy()

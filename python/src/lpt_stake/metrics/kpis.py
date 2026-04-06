@@ -35,6 +35,22 @@ def compute_tbc_cost_usd(df: pd.DataFrame) -> pd.Series:
     return df["issuance_lpt"] * df["lpt_price_usd"]
 
 
+def compute_net_burden_usd(df: pd.DataFrame) -> pd.Series:
+    """Participation-adjusted burden: dollar transfer from unbonded to bonded holders.
+
+    tbc_cost_usd counts all issued tokens as a cost, but bonded holders receive
+    emissions proportional to their stake and are net beneficiaries, not payers.
+    Only the unbonded fraction (1 - participation_rate) actually absorbs dilution.
+    """
+    return df["tbc_cost_usd"] * (1 - df["participation_rate"])
+
+
+def compute_net_burden_pct_market_cap(df: pd.DataFrame) -> pd.Series:
+    """Net passive-holder burden as a share of market cap."""
+
+    return _safe_divide(df["net_burden_usd"], df["market_cap_usd"])
+
+
 def compute_dilution_rate(df: pd.DataFrame) -> pd.Series:
     """Compute realized dilution as issuance divided by post-issuance supply."""
 
@@ -84,8 +100,10 @@ def build_kpi_dataset(df: pd.DataFrame) -> pd.DataFrame:
     result["issuance_lpt"] = compute_issuance_lpt(result)
     result["market_cap_usd"] = compute_market_cap_usd(result)
     result["tbc_cost_usd"] = compute_tbc_cost_usd(result)
+    result["net_burden_usd"] = compute_net_burden_usd(result)
     result["dilution_rate"] = compute_dilution_rate(result)
     result["tbc_pct_market_cap"] = compute_tbc_pct_market_cap(result)
+    result["net_burden_pct_market_cap"] = compute_net_burden_pct_market_cap(result)
     result["tbc_pct_fees"] = compute_tbc_pct_fees(result)
     result["cost_per_work_unit"] = compute_cost_per_work_unit(result)
     result["forward_inflation_rate"] = compute_forward_inflation_rate(result)
@@ -95,6 +113,7 @@ def build_kpi_dataset(df: pd.DataFrame) -> pd.DataFrame:
         "issuance_lpt",
         "lpt_price_usd",
         "tbc_cost_usd",
+        "net_burden_usd",
         "total_supply_lpt",
         "bonded_lpt",
         "participation_rate",
@@ -104,6 +123,7 @@ def build_kpi_dataset(df: pd.DataFrame) -> pd.DataFrame:
         "fees_usd",
         "winning_ticket_transfers",
         "tbc_pct_market_cap",
+        "net_burden_pct_market_cap",
         "tbc_pct_fees",
         "work_units",
         "delivery_usage_mins",

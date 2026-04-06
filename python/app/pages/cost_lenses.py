@@ -5,7 +5,7 @@ from __future__ import annotations
 import marimo as mo
 import pandas as pd
 
-from lpt_stake.charts import cost_vs_dilution, kpi_line, ratio_chart
+from lpt_stake.charts import cost_vs_dilution, cost_vs_net_burden, kpi_line, ratio_chart
 from lpt_stake.metrics.frames import dilution_frame, expense_frame
 from app.pages.common import holder_impact_block, section_intro
 
@@ -19,10 +19,12 @@ def render_cost_lenses(df: pd.DataFrame, range_label: str):
     blocks = [
         section_intro(
             "Expense vs Dilution",
-            "The same issuance history translated into two units: cash-equivalent cost and passive-holder ownership loss.",
+            "The same issuance history translated into two units: cash-equivalent cost and passive-holder ownership loss. "
+            "Gross issuance counts all tokens issued; net passive burden adjusts for the bonded share that flows back to stakers.",
             kicker="Cost Translation",
         ),
         holder_impact_block(df),
+        cost_vs_net_burden(df),
         cost_vs_dilution(df),
     ]
 

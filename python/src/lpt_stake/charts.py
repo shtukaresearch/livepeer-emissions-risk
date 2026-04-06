@@ -67,6 +67,28 @@ def cost_vs_dilution(df: pd.DataFrame) -> alt.Chart:
     return alt.hconcat(cost, dilution)
 
 
+def cost_vs_net_burden(df: pd.DataFrame) -> alt.Chart:
+    """Render side-by-side gross issuance and net passive burden charts."""
+
+    gross = kpi_line(
+        df,
+        "date",
+        "tbc_cost_usd",
+        "Gross Issuance (Protocol Cost)",
+        "USD",
+        subtitle="Total dollar value of tokens issued — includes bonded-holder share.",
+    )
+    net = kpi_line(
+        df,
+        "date",
+        "net_burden_usd",
+        "Net Passive Burden",
+        "USD",
+        subtitle="Gross × (1 − participation rate). Transfer from unbonded to bonded holders only.",
+    )
+    return alt.hconcat(gross, net)
+
+
 def ratio_chart(
     df: pd.DataFrame,
     x: str,

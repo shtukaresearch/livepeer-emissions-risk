@@ -78,7 +78,7 @@ def _merge_and_write(path: Path, new_rows: pd.DataFrame) -> int:
 
 
 def _run_chain_refresh(state_path: Path, target_end_date: date, bootstrap_start: date | None) -> None:
-    script_path = Path(__file__).resolve().parents[2] / "script" / "fetch-data.py"
+    script_path = Path(__file__).resolve().parents[3] / "script" / "fetch-data.py"
     bounds = _existing_bounds(state_path)
 
     if bounds is None:
