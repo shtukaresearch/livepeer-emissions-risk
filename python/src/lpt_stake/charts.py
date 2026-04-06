@@ -89,6 +89,34 @@ def cost_vs_net_burden(df: pd.DataFrame) -> alt.Chart:
     return alt.hconcat(gross, net)
 
 
+def economic_earnings_chart(df: pd.DataFrame) -> alt.Chart:
+    """Render economic earnings (fees minus net passive burden) with a zero baseline.
+
+    Above zero: network generates more in fees than it extracts from passive holders.
+    Below zero: network runs a dilution-funded deficit.
+    """
+    title = alt.TitleParams(
+        text="Economic Earnings (Fees − Net Passive Burden)",
+        subtitle=["Positive = self-sustaining. Negative = deficit funded by dilution of passive holders."],
+    )
+    base = alt.Chart(df).properties(width=700, height=280, title=title)
+
+    line = base.mark_line().encode(
+        x=alt.X("date:T", title="Date"),
+        y=alt.Y("economic_earnings_usd:Q", axis=alt.Axis(title="USD")),
+        tooltip=[
+            alt.Tooltip("date:T", title="Date"),
+            alt.Tooltip("economic_earnings_usd:Q", title="Economic Earnings (USD)", format="$,.2f"),
+        ],
+    )
+
+    zero_rule = alt.Chart(pd.DataFrame({"y": [0]})).mark_rule(
+        color="gray", strokeDash=[4, 4], strokeWidth=1
+    ).encode(y="y:Q")
+
+    return line + zero_rule
+
+
 def ratio_chart(
     df: pd.DataFrame,
     x: str,

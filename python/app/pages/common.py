@@ -366,13 +366,27 @@ def common_footing_table(df: pd.DataFrame) -> mo.Html:
     avg_market_cap = pd.to_numeric(df["market_cap_usd"], errors="coerce").mean()
     cumulative = cumulative_dilution(df)
 
+    total_net_burden = _numeric_series(df, "net_burden_usd").sum(min_count=1)
+    total_economic_earnings = (
+        total_fees - total_net_burden
+        if pd.notna(total_fees) and pd.notna(total_net_burden)
+        else float("nan")
+    )
+
     rows = [
         (
-            "Token-based compensation",
+            "Token-based compensation (gross)",
             fmt_number(total_tbc, "usd"),
             fmt_number(total_tbc / avg_market_cap if pd.notna(avg_market_cap) and avg_market_cap else float("nan"), "pct"),
             fmt_number(total_tbc / total_fees if pd.notna(total_fees) and total_fees else float("nan"), "pct"),
             fmt_number(cumulative, "bps"),
+        ),
+        (
+            "Net passive burden",
+            fmt_number(total_net_burden, "usd"),
+            fmt_number(total_net_burden / avg_market_cap if pd.notna(avg_market_cap) and avg_market_cap else float("nan"), "pct"),
+            fmt_number(total_net_burden / total_fees if pd.notna(total_fees) and total_fees else float("nan"), "pct"),
+            "n/a",
         ),
     ]
 
@@ -383,6 +397,15 @@ def common_footing_table(df: pd.DataFrame) -> mo.Html:
                 fmt_number(total_fees, "usd"),
                 fmt_number(total_fees / avg_market_cap if pd.notna(avg_market_cap) and avg_market_cap else float("nan"), "pct"),
                 fmt_number(1.0, "pct"),
+                "n/a",
+            )
+        )
+        rows.append(
+            (
+                "Economic earnings (fees − net burden)",
+                fmt_number(total_economic_earnings, "usd"),
+                fmt_number(total_economic_earnings / avg_market_cap if pd.notna(avg_market_cap) and avg_market_cap else float("nan"), "pct"),
+                "n/a",
                 "n/a",
             )
         )

@@ -51,6 +51,17 @@ def compute_net_burden_pct_market_cap(df: pd.DataFrame) -> pd.Series:
     return _safe_divide(df["net_burden_usd"], df["market_cap_usd"])
 
 
+def compute_economic_earnings_usd(df: pd.DataFrame) -> pd.Series:
+    """Protocol economic earnings: fees minus net passive burden.
+
+    Analogous to corporate 'economic earnings' = revenue minus SBC.
+    Positive means the network generates more in fees than it extracts
+    from passive holders via dilution. Negative means the network runs
+    a dilution-funded deficit.
+    """
+    return df["fees_usd"] - df["net_burden_usd"]
+
+
 def compute_dilution_rate(df: pd.DataFrame) -> pd.Series:
     """Compute realized dilution as issuance divided by post-issuance supply."""
 
@@ -105,6 +116,7 @@ def build_kpi_dataset(df: pd.DataFrame) -> pd.DataFrame:
     result["tbc_pct_market_cap"] = compute_tbc_pct_market_cap(result)
     result["net_burden_pct_market_cap"] = compute_net_burden_pct_market_cap(result)
     result["tbc_pct_fees"] = compute_tbc_pct_fees(result)
+    result["economic_earnings_usd"] = compute_economic_earnings_usd(result)
     result["cost_per_work_unit"] = compute_cost_per_work_unit(result)
     result["forward_inflation_rate"] = compute_forward_inflation_rate(result)
 
@@ -125,6 +137,7 @@ def build_kpi_dataset(df: pd.DataFrame) -> pd.DataFrame:
         "tbc_pct_market_cap",
         "net_burden_pct_market_cap",
         "tbc_pct_fees",
+        "economic_earnings_usd",
         "work_units",
         "delivery_usage_mins",
         "storage_usage_mins",
